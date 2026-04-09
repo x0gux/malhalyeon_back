@@ -12,7 +12,7 @@ swagger = Swagger(app)
 
 # 1. 제미나이 모델 설정
 # 사용자가 제공한 키 사용 (실제 서비스 배포 시 환경 변수 사용을 권장합니다)
-API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyBD1KFLgB1scYcOhuFOt9Um5TwN4khA558")
+API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyC17o61qH2QOrUaTbgJU9K91fFG6y3DDbI")
 chat = ChatGoogleGenerativeAI(
     model="models/gemini-2.5-flash",
     google_api_key=API_KEY
