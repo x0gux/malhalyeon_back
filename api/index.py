@@ -99,7 +99,7 @@ def analyze_chat():
 
         # 2. 카톡 데이터 읽기
         df = pd.read_csv(file)
-        chat_log = df.tail(100).to_string() # 최근 100개 대화만 추출
+        chat_log = df.tail(all).to_string() # 전체 대화만 추출
 
         # 3. 분석 요청 - 기획서 및 영수증 UI 기반 커스텀 프롬프트
         prompt = f"""
