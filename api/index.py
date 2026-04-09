@@ -101,11 +101,17 @@ def analyze_chat():
 
         # 4. AI 호출 및 정제
         result = invoke_with_retry(chat, prompt)
-        content = result.content.strip()
-        
+        if isinstance(result.content, list):
+            # 리스트 내부의 텍스트 요소들만 합쳐서 하나의 문자열로 만듭니다
+            content = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in result.content])
+        else:
+            content = str(result.content)
+
+        content = content.strip()
+
         # JSON 부분만 추출하는 Regex
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        
+                
         if json_match:
             json_str = json_match.group().replace('\n', '')
             analysis_data = json.loads(json_str)
