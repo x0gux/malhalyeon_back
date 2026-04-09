@@ -38,6 +38,11 @@ def analyze_chat():
         type: file
         required: true
         description: 카카오톡 대화 내용 내보내기 파일 (CSV 형식)
+      - name: target_name
+        in: formData
+        type: string
+        required: true
+        description: 분석할 상대방의 이름 (카톡방에서의 이름)
     responses:
       200:
         description: 분석이 완료된 JSON 객체를 반환합니다.
@@ -77,7 +82,11 @@ def analyze_chat():
         description: 서버 내부 오류
     """
     try:
-        # 1. 파일이 전송되었는지 확인
+        # 1. 대상 이름 및 파일 확인
+        target_name = request.form.get('target_name')
+        if not target_name:
+            return jsonify({"error": "오류: 'target_name' 파라미터를 입력해주세요."}), 400
+
         if 'file' not in request.files:
             return jsonify({"error": "오류: 'file' 키로 CSV 파일을 업로드해주세요."}), 400
         
@@ -92,13 +101,13 @@ def analyze_chat():
 
         # 3. 분석 요청 - 기획서 및 영수증 UI 기반 커스텀 프롬프트
         prompt = f"""
-역할: 당신은 연애 상담 전문가입니다. 카톡 대화를 분석하여 상대방과 얼마나 잘될지가 아닌 상대방의 유해한 행동 패턴을 분석하여 얼마나 망할지/연애하면 안되는지를 정량화된 JSON 데이터로 반환하는 역할을 수행한다.
+역할: 당신은 연애 상담 전문가입니다. 카톡 대화를 분석하여 '{target_name}'님과 얼마나 잘될지가 아닌 '{target_name}'님의 유해한 행동 패턴을 분석하여 얼마나 망할지/연애하면 안되는지를 정량화된 JSON 데이터로 반환하는 역할을 수행한다.
 
 분석 대상 대화:
 {chat_log}
 
 분석 지침:
-1. 행동 추출: 대화에서 발견되는 상대방의 부정적 행동(책임 전가, 가스라이팅, 회피, 단답 등)을 명확한 단어로 정의할 것.
+1. 행동 추출: 대화에서 발견되는 '{target_name}'님의 부정적 행동(책임 전가, 가스라이팅, 회피, 단답 등)을 명확한 단어로 정의할 것.
 2. 횟수 산정: 해당 행동이 대화 내에서 등장한 횟수를 정수로 카운트할 것.
 3. 호감도 산출: 해당 행동이 관계에 미치는 긍정적 영향을 0~100 사이로 산출 (낮을수록 유해하고 타격이 큼).
 4. 판정 근거: '연애가 망하는 이유'를 바탕으로 냉정하고 시니컬하게 분석할 것.
@@ -109,7 +118,7 @@ def analyze_chat():
 - 어떠한 사고 과정(thinking)이나 추가 설명 텍스트도 포함하지 말 것.
 - 줄바꿈(\\n) 없이 한 줄의 완벽한 JSON string 형태로 반환할 것.
 
-{{ "receipt_info": {{ "service_name": "망할연", "target_name": "상대방" }}, "analysis_items": [ {{ "behavior": "행동 명칭", "count": 0, "likability_score": 0, "description": "시니컬한 한줄 요약" }} ], "final_verdict": {{ "status": "최종 관계 상태 판정", "comment": "냉정한 최종 한줄평" }} }}
+{{ "receipt_info": {{ "service_name": "망할연", "target_name": "{target_name}" }}, "analysis_items": [ {{ "behavior": "행동 명칭", "count": 0, "likability_score": 0, "description": "시니컬한 한줄 요약" }} ], "final_verdict": {{ "status": "최종 관계 상태 판정", "comment": "냉정한 최종 한줄평" }} }}
 """
 
         # API 호출
