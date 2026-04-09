@@ -69,6 +69,8 @@ def analyze_chat():
                     type: integer
                   description:
                     type: string
+                  evidence:
+                    type: string
             final_verdict:
               type: object
               properties:
@@ -111,6 +113,7 @@ def analyze_chat():
 2. 횟수 산정: 해당 행동이 대화 내에서 등장한 횟수를 정수로 카운트할 것.
 3. 호감도 산출: 해당 행동이 관계에 미치는 긍정적 영향을 0~100 사이로 산출 (낮을수록 유해하고 타격이 큼).
 4. 판정 근거: '연애가 망하는 이유'를 바탕으로 냉정하고 시니컬하게 분석할 것.
+5. 실제 증거: 해당 행동을 판단하게 된 결정적인 근거가 되는 상대방('{target_name}'님)의 실제 카톡 텍스트 인용구를 추출할 것.
 
 출력 형식:
 - 반드시 아래 JSON 구조만 반환할 것.
@@ -118,7 +121,7 @@ def analyze_chat():
 - 어떠한 사고 과정(thinking)이나 추가 설명 텍스트도 포함하지 말 것.
 - 줄바꿈(\\n) 없이 한 줄의 완벽한 JSON string 형태로 반환할 것.
 
-{{ "receipt_info": {{ "service_name": "망할연", "target_name": "{target_name}" }}, "analysis_items": [ {{ "behavior": "행동 명칭", "count": 0, "likability_score": 0, "description": "시니컬한 한줄 요약" }} ], "final_verdict": {{ "status": "최종 관계 상태 판정", "comment": "냉정한 최종 한줄평" }} }}
+{{ "receipt_info": {{ "service_name": "망할연", "target_name": "{target_name}" }}, "analysis_items": [ {{ "behavior": "행동 명칭", "count": 0, "likability_score": 0, "description": "시니컬한 한줄 요약", "evidence": "상대방의 실제 카톡 발언 인용구" }} ], "final_verdict": {{ "status": "최종 관계 상태 판정", "comment": "냉정한 최종 한줄평" }} }}
 """
 
         # API 호출
