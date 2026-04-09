@@ -3,10 +3,12 @@ import json
 import pandas as pd
 from flask import Flask, render_template, request, jsonify
 from langchain_google_genai import ChatGoogleGenerativeAI
+from flasgger import Swagger
 
 # Initialize Flask app
 # Since this file is in api/ folder, we need to explicitly set the template and static folder relative to this file
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
+swagger = Swagger(app)
 
 # 1. 제미나이 모델 설정
 # 사용자가 제공한 키 사용 (실제 서비스 배포 시 환경 변수 사용을 권장합니다)
@@ -22,6 +24,58 @@ def home():
 
 @app.route('/api/analyze', methods=['POST'])
 def analyze_chat():
+    """
+    카카오톡 대화 내용 분석 (CSV)
+    해당 API는 카카오톡 대화 내용(CSV) 데이터를 받아 제미나이를 통해 유해한 행동 패턴을 분석하고 결과를 반환합니다.
+    ---
+    tags:
+      - Analysis
+    consumes:
+      - multipart/form-data
+    parameters:
+      - name: file
+        in: formData
+        type: file
+        required: true
+        description: 카카오톡 대화 내용 내보내기 파일 (CSV 형식)
+    responses:
+      200:
+        description: 분석이 완료된 JSON 객체를 반환합니다.
+        schema:
+          type: object
+          properties:
+            receipt_info:
+              type: object
+              properties:
+                service_name:
+                  type: string
+                target_name:
+                  type: string
+            analysis_items:
+              type: array
+              items:
+                type: object
+                properties:
+                  behavior:
+                    type: string
+                  count:
+                    type: integer
+                  likability_score:
+                    type: integer
+                  description:
+                    type: string
+            final_verdict:
+              type: object
+              properties:
+                status:
+                  type: string
+                comment:
+                  type: string
+      400:
+        description: 잘못된 요청 (파일 누락 등)
+      500:
+        description: 서버 내부 오류
+    """
     try:
         # 1. 파일이 전송되었는지 확인
         if 'file' not in request.files:
