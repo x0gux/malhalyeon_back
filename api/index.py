@@ -13,7 +13,7 @@ swagger = Swagger(app)
 # 1. 제미나이 모델 설정
 API_KEY = os.environ.get("ai_key")
 chat = ChatGoogleGenerativeAI(
-    model="gemma-4-31b-it",
+    model="gemini-3.1-flash-lite-preview",
     google_api_key=API_KEY,
     transport="rest"
 )
