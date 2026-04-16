@@ -10,7 +10,6 @@ from flasgger import Swagger
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
 swagger = Swagger(app)
 
-# 1. 제미나이 모델 설정
 API_KEY = os.environ.get("ai_key")
 chat = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
@@ -18,52 +17,56 @@ chat = ChatGoogleGenerativeAI(
     transport="rest"
 )
 
-# [추가] 서버 과부하(503) 대비 재시도 함수
+# 분당 호출 횟수 추적
+_call_times = []
+MAX_CALLS_PER_MINUTE = 4  # 5회 한도에서 1회 여유분 확보
+
+def wait_if_rate_limited():
+    now = time.time()
+    # 1분 이내 호출 기록만 유지
+    _call_times[:] = [t for t in _call_times if now - t < 60]
+    
+    if len(_call_times) >= MAX_CALLS_PER_MINUTE:
+        oldest = _call_times[0]
+        wait_sec = 60 - (now - oldest) + 1
+        print(f"분당 호출 한도 도달 — {wait_sec:.1f}초 대기")
+        time.sleep(wait_sec)
+        _call_times[:] = [t for t in _call_times if time.time() - t < 60]
+    
+    _call_times.append(time.time())
+
 def invoke_with_retry(chat_model, prompt_text, max_retries=3):
     for i in range(max_retries):
         try:
+            wait_if_rate_limited()
             return chat_model.invoke(prompt_text)
         except Exception as e:
-            if "503" in str(e) or "high demand" in str(e).lower():
-                wait_time = (2 ** i)
+            err = str(e)
+            if "429" in err or "RESOURCE_EXHAUSTED" in err:
+                wait_sec = 60
+                # 에러 메시지에서 retryDelay 파싱
+                match = re.search(r'retry in (\d+)', err)
+                if match:
+                    wait_sec = int(match.group(1)) + 2
+                print(f"Rate limit 초과 — {wait_sec}초 대기 후 재시도 ({i+1}/{max_retries})")
+                time.sleep(wait_sec)
+                _call_times.clear()  # 카운터 리셋
+            elif "503" in err or "high demand" in err.lower():
+                wait_sec = 2 ** i
                 print(f"서버 과부하 재시도 중... ({i+1}/{max_retries})")
-                time.sleep(wait_time)
+                time.sleep(wait_sec)
             else:
                 raise e
     raise Exception("AI 서버 응답 지연으로 분석에 실패했습니다.")
 
+# 이하 라우터 동일
 @app.route('/')
 def home():
     return render_template('index.html')
 
 @app.route('/api/analyze', methods=['POST'])
 def analyze_chat():
-    """
-    카카오톡 대화 내용 분석 API
-    ---
-    tags:
-      - Analysis
-    parameters:
-      - name: target_name
-        in: formData
-        type: string
-        required: true
-        description: 분석할 상대방의 이름
-      - name: file
-        in: formData
-        type: file
-        required: true
-        description: 카톡 대화 CSV 파일
-    responses:
-      200:
-        description: 분석 결과 반환
-      400:
-        description: 요청 오류
-      500:
-        description: 서버 오류
-    """
     try:
-        # 1. 파라미터 체크 (들여쓰기 4칸 유지)
         target_name = request.form.get('target_name')
         if not target_name:
             return jsonify({"error": "분석 대상자 이름을 입력해주세요."}), 400
@@ -73,7 +76,6 @@ def analyze_chat():
         
         file = request.files['file']
         
-        # 2. 데이터 읽기
         try:
             df = pd.read_csv(file, encoding='utf-8-sig')
         except:
@@ -82,7 +84,6 @@ def analyze_chat():
 
         chat_log = df.tail(300).to_string()
 
-        # 3. 프롬프트 설정 (멀티라인 스트링은 들여쓰기 영향을 덜 받지만, 가독성을 위해 정리)
         prompt = f"""
 역할: 당신은 연애 상담 전문가입니다. 카톡 대화를 분석하여 '{target_name}'님의 유해한 행동 패턴을 분석하여 정량화된 JSON 데이터로 반환하라.
 
@@ -99,17 +100,13 @@ def analyze_chat():
 }}
 """
 
-        # 4. AI 호출 및 정제
         result = invoke_with_retry(chat, prompt)
         if isinstance(result.content, list):
-            # 리스트 내부의 텍스트 요소들만 합쳐서 하나의 문자열로 만듭니다
             content = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in result.content])
         else:
             content = str(result.content)
 
         content = content.strip()
-
-        # JSON 부분만 추출하는 Regex
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
                 
         if json_match:
