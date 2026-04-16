@@ -8,6 +8,14 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from flasgger import Swagger
 
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
+
+app.config['SWAGGER'] = {
+    'title': '야, 너두? 망할연 API',
+    'uiversion': 3,
+    'endpoint': 'apispec_1',
+    'description': '카카오톡 대화 분석을 통해 유해한 관계 패턴을 정량화하여 제공하는 API입니다.',
+    'specs_route': '/apidocs/'
+}
 swagger = Swagger(app)
 
 API_KEY = os.environ.get("ai_key")
@@ -62,10 +70,64 @@ def invoke_with_retry(chat_model, prompt_text, max_retries=3):
 # 이하 라우터 동일
 @app.route('/')
 def home():
+    """
+    홈 페이지
+    ---
+    responses:
+      200:
+        description: 메인 분석 페이지(index.html)를 반환합니다.
+    """
     return render_template('index.html')
 
 @app.route('/api/analyze', methods=['POST'])
 def analyze_chat():
+    """
+    카톡 대화 분석 API
+    ---
+    tags:
+      - Analysis
+    parameters:
+      - name: target_name
+        in: formData
+        type: string
+        required: true
+        description: 분석 대상자의 이름
+      - name: file
+        in: formData
+        type: file
+        required: true
+        description: 카카오톡 대화 내용 CSV 파일 (utf-8-sig 또는 cp949 인코딩 지원)
+    responses:
+      200:
+        description: 분석 성공 결과
+        schema:
+          type: object
+          properties:
+            receipt_info:
+              type: object
+              properties:
+                service_name: {type: string}
+                target_name: {type: string}
+            analysis_items:
+              type: array
+              items:
+                type: object
+                properties:
+                  behavior: {type: string}
+                  count: {type: integer}
+                  likability_score: {type: integer}
+                  description: {type: string}
+                  evidence: {type: string}
+            final_verdict:
+              type: object
+              properties:
+                status: {type: string}
+                comment: {type: string}
+      400:
+        description: 파라미터 부족 (target_name 또는 file 누락)
+      500:
+        description: 서버 오류 또는 분석 실패
+    """
     try:
         target_name = request.form.get('target_name')
         if not target_name:
