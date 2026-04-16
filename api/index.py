@@ -18,7 +18,7 @@ app.config['SWAGGER'] = {
 
 API_KEY = os.environ.get("ai_key")
 chat = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
+    model="gemini-2.5-flash-lite",
     google_api_key=API_KEY,
     transport="rest"
 )
