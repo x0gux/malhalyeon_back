@@ -2,3 +2,4 @@ Flask==3.0.0
 pandas
 langchain-google-genai
 flasgger
+flask-cors

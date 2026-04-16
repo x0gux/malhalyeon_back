@@ -6,8 +6,10 @@ import pandas as pd
 from flask import Flask, render_template, request, jsonify
 from langchain_google_genai import ChatGoogleGenerativeAI
 from flasgger import Swagger
+from flask_cors import CORS
 
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 app.config['SWAGGER'] = {
     'title': '야, 너두? 망할연 API',
