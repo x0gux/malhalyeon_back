@@ -12,7 +12,6 @@ app = Flask(__name__, template_folder='../templates', static_folder='../static')
 app.config['SWAGGER'] = {
     'title': '야, 너두? 망할연 API',
     'uiversion': 3,
-    'endpoint': 'apispec_1',
     'description': '카카오톡 대화 분석을 통해 유해한 관계 패턴을 정량화하여 제공하는 API입니다.',
     'specs_route': '/apidocs/'
 }
