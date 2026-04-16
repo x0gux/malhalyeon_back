@@ -16,7 +16,6 @@ app.config['SWAGGER'] = {
     'description': '카카오톡 대화 분석을 통해 유해한 관계 패턴을 정량화하여 제공하는 API입니다.',
     'specs_route': '/apidocs/'
 }
-swagger = Swagger(app)
 
 API_KEY = os.environ.get("ai_key")
 chat = ChatGoogleGenerativeAI(
@@ -180,6 +179,8 @@ def analyze_chat():
 
     except Exception as e:
         return jsonify({"error": f"서버 오류: {str(e)}"}), 500
+
+swagger = Swagger(app)
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
