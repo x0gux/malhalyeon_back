@@ -5,11 +5,11 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 API_KEY = os.environ.get("ai_key")
 
-# Initialize Chat Model
 chat = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash-lite",
     google_api_key=API_KEY,
-    transport="rest"
+    transport="rest",
+    max_output_tokens=8192
 )
 
 # ───────────────────────────────────────────
