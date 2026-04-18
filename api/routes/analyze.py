@@ -126,9 +126,13 @@ compatibility_issues는 대화 패턴만으로 일반적인 관계 충돌 지점
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
 
         if json_match:
-            json_str = json_match.group().replace('\n', '')
-            analysis_data = json.loads(json_str)
-            return jsonify(analysis_data)
+            json_str = json_match.group()
+            try:
+                analysis_data = json.loads(json_str, strict=False)
+                return jsonify(analysis_data)
+            except json.JSONDecodeError as decode_error:
+                # 에러 발생 시 원본 문자열을 같이 반환해서 디버깅 가능하도록
+                return jsonify({"error": f"JSON 파싱 오류: {str(decode_error)}", "raw": json_str}), 500
         else:
             return jsonify({"error": "JSON 형식을 찾을 수 없습니다.", "raw": content}), 500
 
