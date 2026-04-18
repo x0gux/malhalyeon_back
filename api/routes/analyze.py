@@ -23,7 +23,7 @@ def analyze_chat():
         in: formData
         type: file
         required: true
-        description: 카카오톡 CSV 파일
+        description: 카카오톡 CSV 또는 TXT 파일
       - name: user_type
         in: formData
         type: string
@@ -43,17 +43,28 @@ def analyze_chat():
             return jsonify({"error": "분석 대상자 이름을 입력해주세요."}), 400
 
         if 'file' not in request.files:
-            return jsonify({"error": "CSV 파일을 업로드해주세요."}), 400
+            return jsonify({"error": "CSV 또는 TXT 파일을 업로드해주세요."}), 400
 
         file = request.files['file']
+        filename = file.filename.lower()
 
-        try:
-            df = pd.read_csv(file, encoding='utf-8-sig')
-        except:
-            file.seek(0)
-            df = pd.read_csv(file, encoding='cp949')
-
-        chat_log = df.tail(300).to_string()
+        if filename.endswith('.csv'):
+            try:
+                df = pd.read_csv(file, encoding='utf-8-sig')
+            except:
+                file.seek(0)
+                df = pd.read_csv(file, encoding='cp949')
+            chat_log = df.tail(800).to_string()
+        elif filename.endswith('.txt'):
+            try:
+                content = file.read().decode('utf-8')
+            except:
+                file.seek(0)
+                content = file.read().decode('cp949', errors='ignore')
+            lines = content.splitlines()
+            chat_log = '\n'.join(lines[-800:])
+        else:
+            return jsonify({"error": "지원하지 않는 파일 형식입니다. CSV 또는 TXT 파일만 가능합니다."}), 400
 
         # user_type 파싱 (optional)
         user_type = None
