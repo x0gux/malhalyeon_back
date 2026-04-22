@@ -55,6 +55,7 @@ def analyze_chat():
                 file.seek(0)
                 df = pd.read_csv(file, encoding='cp949')
             chat_log = df.tail(800).to_string()
+
         elif filename.endswith('.txt'):
             try:
                 content = file.read().decode('utf-8')
@@ -63,8 +64,21 @@ def analyze_chat():
                 content = file.read().decode('cp949', errors='ignore')
             lines = content.splitlines()
             chat_log = '\n'.join(lines[-800:])
+
+        elif filename.endswith('.html') or filename.endswith('.htm'):
+            try:
+                content = file.read().decode('utf-8')
+            except:
+                file.seek(0)
+                content = file.read().decode('cp949', errors='ignore')
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(content, 'html.parser')
+            text = soup.get_text(separator='\n')
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            chat_log = '\n'.join(lines[-800:])
+
         else:
-            return jsonify({"error": "지원하지 않는 파일 형식입니다. CSV 또는 TXT 파일만 가능합니다."}), 400
+            return jsonify({"error": "지원하지 않는 파일 형식입니다. CSV, TXT 또는 HTML 파일만 가능합니다."}), 400
 
         # user_type 파싱 (optional)
         user_type = None
