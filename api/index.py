@@ -6,6 +6,7 @@ from flask_cors import CORS
 from api.routes.home import home_bp
 from api.routes.quiz import quiz_bp
 from api.routes.analyze import analyze_bp
+from api.routes.mypage import mypage_bp
 
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -20,6 +21,7 @@ app.config['SWAGGER'] = {
 app.register_blueprint(home_bp)
 app.register_blueprint(quiz_bp)
 app.register_blueprint(analyze_bp)
+app.register_blueprint(mypage_bp)
 
 swagger = Swagger(app)
 
