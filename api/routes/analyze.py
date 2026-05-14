@@ -91,6 +91,7 @@ def analyze_chat():
                 file.seek(0)
                 df = pd.read_csv(file, encoding='cp949')
             chat_log = df.tail(800).to_string()
+            chat_format = "카카오톡 CSV 내보내기 형식. 열 구조: 날짜, 화자 이름, 메시지 내용 순. 화자는 이름 열로 구분됨."
 
         elif filename.endswith('.txt'):
             try:
@@ -100,6 +101,7 @@ def analyze_chat():
                 content = file.read().decode('cp949', errors='ignore')
             lines = content.splitlines()
             chat_log = '\n'.join(lines[-800:])
+            chat_format = "카카오톡 TXT 내보내기 형식. 각 줄은 '[날짜] [이름] : [메시지]' 구조. 화자는 콜론(:) 앞 이름으로 구분됨."
 
         elif filename.endswith('.html') or filename.endswith('.htm'):
             try:
@@ -112,6 +114,7 @@ def analyze_chat():
             text = soup.get_text(separator='\n')
             lines = [line.strip() for line in text.splitlines() if line.strip()]
             chat_log = '\n'.join(lines[-800:])
+            chat_format = "인스타그램 HTML 내보내기 형식. 화자 이름이 메시지 앞에 표시됨."
 
         else:
             return jsonify({"error": "지원하지 않는 파일 형식입니다. CSV, TXT 또는 HTML 파일만 가능합니다."}), 400
@@ -143,46 +146,104 @@ compatibility_issues는 대화 패턴만으로 일반적인 관계 충돌 지점
             user_type_name = "미검사"
 
         prompt = f"""
-역할: 연애 상담 전문가. 아래 [공공데이터 기반 위험 행동 분류 체계]를 기준으로 '{target_name}'의 대화 패턴을 분석하라.
+역할: 데이트폭력 피해 상담 경력 10년의 전문가.
+감정적 판단 없이 대화 증거에만 근거해 냉정하게 분석한다.
+아래 [공공데이터 기반 위험 행동 분류 체계]를 기준으로 '{target_name}'의 대화 패턴을 분석하라.
 
 {VIOLENCE_TAXONOMY}
 
-분석 기준:
-- `likability_score`는 해당 행동이 관계를 망치는 치명도 점수 (0 ~ -100 사이).
-  위의 분류 체계에서 더 심각한 유형일수록 -100에 가깝게 평가.
-  예) 자해 협박(-90~-100) > 위치 집착(-40~-60) > 폭언(-30~-50) > 과도한 연락 통제(-20~-40)
-- `danger_type`은 위 분류 체계 중 해당하는 유형명을 그대로 사용 (정서적 폭력 / 통제 / 복합피해 위험 / 해당없음)
-- 분석 결과는 가장 핵심적이고 치명적인 원인 3~4개만 작성. 길면 안 됨.
-- [절대 규칙 0] 분석 결과에 target_name을 포함시키지 마시오.
-- [절대 규칙 1] `evidence`에는 반드시 제공된 대화에 실제로 존재하는 문장만 인용하라. 없는 내용 지어내지 말 것.
-- [절대 규칙 2] 모든 분석 내용은 제공된 대화 사실에만 근거하라. 하지도 않은 말·행동을 임의로 추가 금지.
-- [절대 규칙 3] `analysis_items`는 count 높은 순으로 정렬.
-- [절대 규칙 4] `behavir` 은 대화내역을 인용하는것이아닌 행동을 지칭함. ex) 내가 잘못해줄거같아 -> 상대에게 책임 분가
+[대화 형식 안내]
+{chat_format}
+분석 대상자: '{target_name}' — 이 사람의 발화만 분석 대상으로 삼아라.
+
 {user_type_context}
 
 분석 대상 대화:
 {chat_log}
 
-출력 형식 (JSON만 반환, 마크다운 금지):
+─────────────────────────────────────────
+[분석 규칙 - 아래 규칙을 모두 지켜서 JSON을 생성하라]
+─────────────────────────────────────────
+
+[규칙 1] 출력 대상 및 개수
+- 분석 결과에 target_name을 절대 포함시키지 마라.
+- `analysis_items`는 반드시 3개 이상 4개 이하로 작성하라. 5개 이상 금지, 2개 이하 금지.
+- 가장 핵심적이고 치명적인 행동만 선별하라. 사소한 것은 제외.
+
+[규칙 2] behavior 작성법
+- `behavior`는 대화 내역 인용이 아니라 행동 자체를 지칭하는 명사구로 작성하라.
+  예) "내가 잘못해줄게" → "상대에게 책임 전가"
+  예) "지금 어디야?" 반복 → "위치·행방 집착"
+
+[규칙 3] count 산정
+- `count`는 해당 행동 패턴이 제공된 대화에서 실제로 등장한 발화 횟수를 직접 세어 기입하라.
+- 확인할 수 없으면 0으로 기입하라. 추정·추측 금지.
+
+[규칙 4] likability_score 기준 (0 ~ -100)
+- 해당 행동이 관계를 망치는 치명도를 나타낸다. 더 심각할수록 -100에 가깝다.
+  자해·자살 협박: -90 ~ -100
+  신체 협박·위협: -70 ~ -89
+  폭언·모욕: -40 ~ -69
+  위치 집착·통제: -30 ~ -59
+  과도한 연락 통제: -20 ~ -39
+  의심·감시: -10 ~ -29
+  해당없음: 0
+
+[규칙 5] danger_type
+- 위 분류 체계 중 해당하는 유형명을 그대로 사용하라.
+  허용 값: "정서적 폭력" / "통제" / "복합피해 위험" / "해당없음"
+
+[규칙 6] evidence (증거 인용)
+- 제공된 대화에 실제로 존재하는 문장만 그대로 인용하라.
+- 없는 내용을 지어내거나 변형하는 것은 절대 금지.
+- 해당하는 발화가 대화에 없으면 반드시 null로 기입하라.
+
+[규칙 7] analysis_items 정렬
+- count 높은 순으로 정렬하라. count가 같으면 likability_score 낮은 순(더 위험한 것 먼저).
+
+[규칙 8] description 길이
+- `description`은 50자 이내로 작성하라. 초과 금지.
+- `detail`도 50자 이내로 작성하라. 초과 금지.
+
+[규칙 9] compatibility_issues severity 기준
+- analysis_items 중 likability_score -60 이하 항목이 포함된 경우: "높음"
+- likability_score -30 ~ -59 범위 항목만 있는 경우: "중간"
+- likability_score -29 이상 항목만 있는 경우: "낮음"
+
+[규칙 10] danger_level 판정 기준 (아래 조건을 순서대로 확인하고, 처음 해당하는 것으로 결정)
+- "위험": analysis_items 중 danger_type이 "복합피해 위험" 이거나 likability_score -70 이하인 항목이 하나라도 있을 때
+- "경고": analysis_items 중 danger_type이 "정서적 폭력" 또는 "통제"이고 likability_score -40 이하인 항목이 있을 때
+- "주의": 위 두 조건에 해당하지 않지만 부정적 패턴이 존재할 때
+- "안전": 부정적 패턴이 전혀 없을 때
+
+[규칙 11] final_verdict.status 허용값
+- `status`는 반드시 danger_level과 동일한 값으로 기입하라.
+  허용 값: "안전" / "주의" / "경고" / "위험" — 이 외의 표현 사용 금지.
+
+[규칙 12] 모든 분석은 제공된 대화 사실에만 근거하라. 하지도 않은 말·행동 임의 추가 금지.
+
+─────────────────────────────────────────
+[출력 형식 - JSON만 반환, 마크다운 코드블록 금지, 설명문 금지]
+─────────────────────────────────────────
 {{
   "receipt_info": {{ "service_name": "망할연", "target_name": "{target_name}" }},
   "user_type": "{user_type_name}",
   "analysis_items": [
     {{
-      "behavior": "행동 명칭",
+      "behavior": "행동 명칭 (명사구, 대화 직접 인용 아님)",
       "danger_type": "정서적 폭력 / 통제 / 복합피해 위험 / 해당없음",
       "count": 0,
       "likability_score": 0,
-      "description": "요약",
-      "evidence": "인용구"
+      "description": "요약 (50자 이내)",
+      "evidence": "대화에서 실제 존재하는 인용구, 없으면 null"
     }}
   ],
   "compatibility_issues": [
-    {{ "issue": "충돌 원인", "severity": "높음/중간/낮음", "detail": "왜 안 맞는지 설명" }}
+    {{ "issue": "충돌 원인", "severity": "높음/중간/낮음", "detail": "왜 안 맞는지 설명 (50자 이내)" }}
   ],
   "danger_level": "안전 / 주의 / 경고 / 위험",
   "danger_comment": "데이트폭력 위험 신호 관련 한줄 코멘트 (위험 신호 없으면 null)",
-  "final_verdict": {{ "status": "판정", "comment": "한줄평" }}
+  "final_verdict": {{ "status": "danger_level과 동일한 값 (안전/주의/경고/위험 중 하나)", "comment": "한줄평" }}
 }}
 """
 
