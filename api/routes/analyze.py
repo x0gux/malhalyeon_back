@@ -239,7 +239,7 @@ compatibility_issues는 대화 패턴만으로 일반적인 관계 충돌 지점
     }}
   ],
   "compatibility_issues": [
-    {{ "issue": "충돌 원인", "severity": "높음/중간/낮음", "detail": "왜 안 맞는지 설명 (50자 이내)" }}
+    {{ "issue": "충돌 원인", "severity": "높음/중간/낮음", "detail": "왜 안 맞는지 설명 (300자로 서술) + evidence 포함" }}
   ],
   "danger_level": "안전 / 주의 / 경고 / 위험",
   "danger_comment": "데이트폭력 위험 신호 관련 한줄 코멘트 (위험 신호 없으면 null)",
