@@ -27,9 +27,12 @@ def build_system_prompt(analysis_items: list, danger_level: str) -> str:
 
 [연기 규칙]
 - 반드시 위 패턴에서 나타난 행동만 자연스럽게 대화에 녹여라.
+- 반드시 analysis를 진행한 file의 대화를 기반으로 대화해라.
+- 실제 상황과 동일한 상황극으로 대화해라.
+- 상대방의 말투로 대화하라.
 - 위험 등급이 높을수록 더 집착적·통제적 언어를 사용하라.
 - 실제 연인 사이의 일상 대화처럼 자연스럽게 시작하다가 위험 패턴을 드러내라.
-- 짧고 현실감 있는 카카오톡 말투로 대화하라. (이모티콘, ㅋㅋ, ㅠㅠ 등 자연스럽게 사용)
+- 짧고 현실감 있는 카카오톡 말투로 대화하라. 단 이모티콘 사용금지( ㅋㅋ, ㅠㅠ 등 자연스럽게 사용)
 - 한 번에 1~3문장 이내로 짧게 답하라.
 - 상대방 이름이나 본인 이름은 절대 언급하지 마라.
 - 너는 '상대방'이고 사용자는 '본인'이다.
@@ -173,6 +176,28 @@ def simulate_reply():
 
         if not user_message:
             return jsonify({"error": "user_message가 필요합니다."}), 400
+
+        # 시뮬레이션 시작 시 첫 선택지 생성 대응 (첫 턴 분기)
+        if user_message == '시뮬레이션 시작':
+            opponent_message = history[0]['content'] if history else "오늘 뭐해?"
+            choices_prompt = build_choices_prompt(history, analysis_items)
+            choices_result = invoke_simulation(choices_prompt)
+            choices_raw = (choices_result.content if hasattr(choices_result, 'content') else str(choices_result)).strip()
+
+            choices_data = {"choices": []}
+            json_match = re.search(r'\{.*\}', choices_raw, re.DOTALL)
+            if json_match:
+                try:
+                    choices_data = json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    pass
+
+            return jsonify({
+                "opponent_message": opponent_message,
+                "choices": choices_data.get("choices", []),
+                "feedback": None,
+                "turn": 1
+            })
 
         # 1. 상대방 응답 생성
         system_prompt = build_system_prompt(analysis_items, danger_level)

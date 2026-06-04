@@ -12,11 +12,20 @@ chat = ChatGoogleGenerativeAI(
     max_output_tokens=8192
 )
 
+# Simulation Model Configuration
+SIMULATION_MODEL = os.environ.get("simulation_model", "gemma-4-31b-it")
+chat_simulation = ChatGoogleGenerativeAI(
+    model=SIMULATION_MODEL,
+    google_api_key=API_KEY,
+    transport="rest",
+    max_output_tokens=8192
+)
+
 # ───────────────────────────────────────────
 # Rate limit & Retry Logic
 # ───────────────────────────────────────────
 _call_times = []
-MAX_CALLS_PER_MINUTE = 4
+MAX_CALLS_PER_MINUTE = 20
 
 def wait_if_rate_limited():
     now = time.time()
@@ -29,12 +38,13 @@ def wait_if_rate_limited():
         _call_times[:] = [t for t in _call_times if time.time() - t < 60]
     _call_times.append(time.time())
 
-def invoke_with_retry(prompt_text, max_retries=3):
-    '''Uses the global chat instance with retry backoff logic.'''
+def invoke_with_retry(prompt_text, max_retries=3, chat_instance=None):
+    '''Uses the specified or global chat instance with retry backoff logic.'''
+    target_chat = chat_instance or chat
     for i in range(max_retries):
         try:
             wait_if_rate_limited()
-            return chat.invoke(prompt_text)
+            return target_chat.invoke(prompt_text)
         except Exception as e:
             err = str(e)
             if "429" in err or "RESOURCE_EXHAUSTED" in err:
@@ -54,5 +64,5 @@ def invoke_with_retry(prompt_text, max_retries=3):
     raise Exception("AI 서버 응답 지연으로 분석에 실패했습니다.")
 
 def invoke_simulation(prompt_text, max_retries=3):
-    '''Uses the global chat instance with retry backoff logic for simulations.'''
-    return invoke_with_retry(prompt_text, max_retries)
+    '''Uses the global chat_simulation instance with retry backoff logic for simulations.'''
+    return invoke_with_retry(prompt_text, max_retries, chat_instance=chat_simulation)
