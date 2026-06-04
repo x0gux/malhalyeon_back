@@ -5,6 +5,23 @@ from api.ai import invoke_simulation
 
 simulate_bp = Blueprint('simulate_bp', __name__)
 
+def extract_text(result) -> str:
+    """Safely extract plain text from a LangChain LLM result.
+    Handles both str content (old SDK) and list-of-blocks content (new SDK)."""
+    content = result.content if hasattr(result, 'content') else result
+    if isinstance(content, list):
+        # New SDK returns a list of content blocks; pick the text ones
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                parts.append(block.get('text', ''))
+            else:
+                parts.append(str(block))
+        return ''.join(parts).strip()
+    return str(content).strip()
+
 # ───────────────────────────────────────────
 # 시뮬레이션 시스템 프롬프트 생성
 # analysis_items의 위험 패턴을 기반으로 상대방 페르소나를 구성
@@ -145,10 +162,10 @@ def start_simulation():
 """
 
         result = invoke_simulation(opening_prompt)
-        content = result.content if hasattr(result, 'content') else str(result)
+        content = extract_text(result)
 
         return jsonify({
-            "message": content.strip(),
+            "message": content,
             "turn": 1
         })
 
@@ -182,7 +199,7 @@ def simulate_reply():
             opponent_message = history[0]['content'] if history else "오늘 뭐해?"
             choices_prompt = build_choices_prompt(history, analysis_items)
             choices_result = invoke_simulation(choices_prompt)
-            choices_raw = (choices_result.content if hasattr(choices_result, 'content') else str(choices_result)).strip()
+            choices_raw = extract_text(choices_result)
 
             choices_data = {"choices": []}
             json_match = re.search(r'\{.*\}', choices_raw, re.DOTALL)
@@ -217,7 +234,7 @@ def simulate_reply():
 """
 
         reply_result = invoke_simulation(reply_prompt)
-        opponent_message = (reply_result.content if hasattr(reply_result, 'content') else str(reply_result)).strip()
+        opponent_message = extract_text(reply_result)
 
         # 2. 다음 선택지 생성
         updated_history = history + [
@@ -226,7 +243,7 @@ def simulate_reply():
         ]
         choices_prompt = build_choices_prompt(updated_history, analysis_items)
         choices_result = invoke_simulation(choices_prompt)
-        choices_raw = (choices_result.content if hasattr(choices_result, 'content') else str(choices_result)).strip()
+        choices_raw = extract_text(choices_result)
 
         choices_data = {"choices": []}
         json_match = re.search(r'\{.*\}', choices_raw, re.DOTALL)
@@ -241,7 +258,7 @@ def simulate_reply():
         if history:
             feedback_prompt = build_feedback_prompt(user_message, opponent_message, analysis_items)
             feedback_result = invoke_simulation(feedback_prompt)
-            feedback_raw = (feedback_result.content if hasattr(feedback_result, 'content') else str(feedback_result)).strip()
+            feedback_raw = extract_text(feedback_result)
             fb_match = re.search(r'\{.*\}', feedback_raw, re.DOTALL)
             if fb_match:
                 try:
@@ -309,7 +326,7 @@ def simulation_result():
 """
 
         result = invoke_simulation(result_prompt)
-        raw = (result.content if hasattr(result, 'content') else str(result)).strip()
+        raw = extract_text(result)
 
         result_data = {}
         json_match = re.search(r'\{.*\}', raw, re.DOTALL)
