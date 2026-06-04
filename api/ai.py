@@ -52,3 +52,7 @@ def invoke_with_retry(prompt_text, max_retries=3):
             else:
                 raise e
     raise Exception("AI 서버 응답 지연으로 분석에 실패했습니다.")
+
+def invoke_simulation(prompt_text, max_retries=3):
+    '''Uses the global chat instance with retry backoff logic for simulations.'''
+    return invoke_with_retry(prompt_text, max_retries)
