@@ -142,7 +142,40 @@ score 기준:
 def start_simulation():
     """
     시뮬레이션 시작 — 첫 번째 상대방 메시지 생성
-    Body: { analysis_items, danger_level }
+    ---
+    tags:
+      - Simulate
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - analysis_items
+          properties:
+            analysis_items:
+              type: array
+              description: 분석 결과 항목 리스트
+              example: [{"behavior": "위치 집착", "count": 5, "likability_score": -40}]
+            danger_level:
+              type: string
+              description: 위험 등급 (안전/주의/경고/위험)
+              example: "경고"
+    responses:
+      200:
+        description: 첫 번째 상대방 메시지 및 턴 번호
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+            turn:
+              type: integer
+      400:
+        description: analysis_items 누락
+      500:
+        description: 서버 오류
     """
     try:
         body = request.get_json()
@@ -177,12 +210,52 @@ def start_simulation():
 def simulate_reply():
     """
     상대방 응답 + 선택지 + 피드백 반환
-    Body: {
-        analysis_items,
-        danger_level,
-        conversation_history: [{role, content}],
-        user_message: string
-    }
+    ---
+    tags:
+      - Simulate
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - user_message
+          properties:
+            analysis_items:
+              type: array
+              description: 분석 결과 항목 리스트
+              example: [{"behavior": "위치 집착", "count": 5, "likability_score": -40}]
+            danger_level:
+              type: string
+              description: 위험 등급
+              example: "경고"
+            conversation_history:
+              type: array
+              description: 지금까지의 대화 히스토리 [{role, content}]
+              example: [{"role": "assistant", "content": "오늘 뭐해?"}]
+            user_message:
+              type: string
+              description: 본인의 메시지
+              example: "그냥 집에 있어"
+    responses:
+      200:
+        description: 상대방 응답, 다음 선택지, 직전 피드백
+        schema:
+          type: object
+          properties:
+            opponent_message:
+              type: string
+            choices:
+              type: array
+            feedback:
+              type: object
+            turn:
+              type: integer
+      400:
+        description: user_message 누락
+      500:
+        description: 서버 오류
     """
     try:
         body = request.get_json()
@@ -281,7 +354,54 @@ def simulate_reply():
 def simulation_result():
     """
     시뮬레이션 종료 — 전체 대화 총평
-    Body: { analysis_items, conversation_history, score_history }
+    ---
+    tags:
+      - Simulate
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - conversation_history
+          properties:
+            analysis_items:
+              type: array
+              description: 분석 결과 항목 리스트
+              example: [{"behavior": "위치 집착", "count": 5, "likability_score": -40}]
+            conversation_history:
+              type: array
+              description: 전체 대화 히스토리
+              example: [{"role": "assistant", "content": "오늘 뭐해?"}, {"role": "user", "content": "집이야"}]
+            score_history:
+              type: array
+              description: 각 턴별 대응 점수 리스트
+              example: [85, 45, 60]
+    responses:
+      200:
+        description: 훈련 총평 결과
+        schema:
+          type: object
+          properties:
+            total_score:
+              type: integer
+            grade:
+              type: string
+            title:
+              type: string
+            summary:
+              type: string
+            best_response:
+              type: string
+            worst_response:
+              type: string
+            advice:
+              type: string
+      400:
+        description: conversation_history 누락
+      500:
+        description: 서버 오류
     """
     try:
         body = request.get_json()

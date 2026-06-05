@@ -13,7 +13,7 @@ chat = ChatGoogleGenerativeAI(
 )
 
 # Simulation Model Configuration
-SIMULATION_MODEL = os.environ.get("simulation_model", "gemma-4-31b-it")
+SIMULATION_MODEL = os.environ.get("simulation_model", "gemini-2.5-flash-lite")
 chat_simulation = ChatGoogleGenerativeAI(
     model=SIMULATION_MODEL,
     google_api_key=API_KEY,
