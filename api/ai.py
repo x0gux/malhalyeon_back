@@ -5,15 +5,16 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 API_KEY = os.environ.get("ai_key")
 
+# 분석용 모델: gemini-2.0-flash (무료 티어 200 req/day)
 chat = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash-lite",
+    model="gemini-2.0-flash",
     google_api_key=API_KEY,
     transport="rest",
     max_output_tokens=8192
 )
 
-# Simulation Model Configuration
-SIMULATION_MODEL = os.environ.get("simulation_model", "gemini-2.5-flash-lite")
+# 시뮬레이션용 모델: gemma-4-31b-it (분석 모델과 별도 할당량)
+SIMULATION_MODEL = os.environ.get("simulation_model", "gemma-4-31b-it")
 chat_simulation = ChatGoogleGenerativeAI(
     model=SIMULATION_MODEL,
     google_api_key=API_KEY,
