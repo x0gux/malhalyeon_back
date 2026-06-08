@@ -81,6 +81,8 @@ def analyze_chat():
     ---
     tags:
       - Analysis
+    security:
+      - Bearer: []
     parameters:
       - name: target_name
         in: formData
@@ -102,6 +104,8 @@ def analyze_chat():
         description: 분석 결과
       400:
         description: 파라미터 누락
+      401:
+        description: 인증 실패
       500:
         description: 서버 오류
     """

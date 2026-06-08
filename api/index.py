@@ -17,7 +17,15 @@ app.config['SWAGGER'] = {
     'title': '야, 너두? 망할연 API',
     'uiversion': 3,
     'description': '카카오톡 대화 분석을 통해 유해한 관계 패턴을 정량화하여 제공하는 API입니다.',
-    'specs_route': '/apidocs/'
+    'specs_route': '/apidocs/',
+    'securityDefinitions': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header',
+            'description': 'Firebase ID Token. 형식: Bearer {token}',
+        }
+    },
 }
 
 app.register_blueprint(home_bp)
