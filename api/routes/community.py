@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, g
 from flask.views import MethodView
@@ -8,6 +9,33 @@ community_bp = Blueprint("community_bp", __name__)
 
 _DEFAULT_LIMIT = 20
 _MAX_LIMIT = 50
+
+
+# ───────────────────────────────────────────
+# 닉네임 생성 — '망할연애' 컨셉 유머용 수식어 + 동물
+# uid 기반 결정적 생성이라 같은 유저는 항상 같은 닉네임이 나온다.
+# ───────────────────────────────────────────
+
+_NICK_MODIFIERS = [
+    "떨리는", "집착하는", "불타는", "위험한", "질투하는", "새벽감성",
+    "읽씹당한", "답장기다리는", "헤어진", "짝사랑하는", "폭주하는", "눈물의",
+    "카톡중독", "연애세포죽은", "금사빠", "이별통보받은", "잠수탄", "미련남은",
+    "술김에연락한", "차단당한", "썸타는", "고백실패한", "재회꿈꾸는", "현타온",
+]
+
+_NICK_ANIMALS = [
+    "사자", "고양이", "너구리", "햄스터", "수달", "펭귄", "불곰", "여우",
+    "두더지", "알파카", "미어캣", "고슴도치", "다람쥐", "판다", "코알라",
+    "늑대", "토끼", "물개", "비둘기", "카피바라", "고래", "문어", "올빼미", "햄찌",
+]
+
+
+def _nickname(uid: str) -> str:
+    """uid를 해시해 '수식어 + 동물' 형태의 고정 닉네임을 만든다."""
+    h = int(hashlib.md5(uid.encode()).hexdigest(), 16)
+    mod = _NICK_MODIFIERS[h % len(_NICK_MODIFIERS)]
+    animal = _NICK_ANIMALS[(h // len(_NICK_MODIFIERS)) % len(_NICK_ANIMALS)]
+    return f"{mod} {animal}"
 
 
 # ───────────────────────────────────────────
@@ -188,7 +216,7 @@ class PostsView(MethodView):
 
             post_data = {
                 "uid": uid,
-                "display_name": "익명" if is_anonymous else user_name,
+                "display_name": "익명" if is_anonymous else _nickname(uid),
                 "photo_url": "" if is_anonymous else user_picture,
                 "title": title,
                 "content": content,
@@ -406,7 +434,7 @@ class CommentsView(MethodView):
             comment_data = {
                 "post_id": post_id,
                 "uid": uid,
-                "display_name": user_name,
+                "display_name": _nickname(uid),
                 "photo_url": user_picture,
                 "content": content,
                 "created_at": now,
