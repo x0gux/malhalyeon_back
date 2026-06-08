@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 import pandas as pd
 from flask import Blueprint, request, jsonify, g
-from api.ai import chat, invoke_with_retry
+from api.ai import invoke_analyze
 from api.firebase_config import get_db
 from api.middleware.auth import require_auth
 
@@ -300,7 +300,7 @@ compatibility_issues는 대화 패턴만으로 일반적인 관계 충돌 지점
 }}
 """
 
-        result = invoke_with_retry(prompt)
+        result = invoke_analyze(prompt)
         if isinstance(result.content, list):
             content = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in result.content])
         else:
