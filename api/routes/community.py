@@ -26,18 +26,6 @@ def _auth() -> tuple:
         return None, jsonify({"error": "유효하지 않거나 만료된 토큰입니다.", "code": "INVALID_TOKEN"}), 401
 
 
-def _check_analyze(uid: str):
-    """분석 이력 1회 이상 확인. 없으면 403 response 반환, 있으면 None."""
-    db = get_db()
-    docs = db.collection("analyze_history").where("uid", "==", uid).limit(1).stream()
-    if not any(True for _ in docs):
-        return jsonify({
-            "error": "글을 쓰려면 먼저 '망할연' 분석 기능을 1회 이상 이용해야 합니다.",
-            "code": "ANALYZE_REQUIRED"
-        }), 403
-    return None
-
-
 # ───────────────────────────────────────────
 # Firestore helpers
 # ───────────────────────────────────────────
@@ -135,7 +123,7 @@ class PostsView(MethodView):
 
     def post(self):
         """
-        게시글 작성 (로그인 + 분석 이력 1회 이상 필수)
+        게시글 작성 (로그인 필수)
         ---
         tags:
           - Community
@@ -173,8 +161,6 @@ class PostsView(MethodView):
             description: 필수 파라미터 누락
           401:
             description: 인증 실패
-          403:
-            description: 분석 이력 없음
           500:
             description: 서버 오류
         """
@@ -183,10 +169,6 @@ class PostsView(MethodView):
             return name_or_err, picture_or_status
 
         uid, user_name, user_picture = uid, name_or_err, picture_or_status
-
-        err = _check_analyze(uid)
-        if err:
-            return err
 
         try:
             body = request.get_json(silent=True) or {}

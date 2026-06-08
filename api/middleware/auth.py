@@ -1,6 +1,6 @@
 from functools import wraps
 from flask import request, jsonify, g
-from api.firebase_config import get_db, verify_id_token
+from api.firebase_config import verify_id_token
 
 
 def require_auth(f):
@@ -27,28 +27,6 @@ def require_auth(f):
         g.user_name = decoded.get("name", "알 수 없음")
         g.user_email = decoded.get("email", "")
         g.user_picture = decoded.get("picture", "")
-        return f(*args, **kwargs)
-
-    return decorated
-
-
-def require_analyze_history(f):
-    """분석 이력 1회 이상 존재 검증 — require_auth 이후에 적용해야 합니다."""
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        db = get_db()
-        docs = (
-            db.collection("analyze_history")
-            .where("uid", "==", g.uid)
-            .limit(1)
-            .stream()
-        )
-        if not any(True for _ in docs):
-            return jsonify({
-                "error": "글을 쓰려면 먼저 '망할연' 분석 기능을 1회 이상 이용해야 합니다.",
-                "code": "ANALYZE_REQUIRED"
-            }), 403
-
         return f(*args, **kwargs)
 
     return decorated
