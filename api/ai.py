@@ -16,18 +16,24 @@ chat = ChatGoogleGenerativeAI(
 
 # 분석용 모델 폴백 체인: 제한(429)에 걸리면 위 단계로 승급하며 재시도
 ANALYZE_MODELS = os.environ.get(
-    "analyze_models", "gemini-2.0-flash,gemini-2.5-flash,gemini-3.0-flash"
+    "analyze_models",
+    "gemini-2.0-flash,gemini-2.5-flash,gemini-2.5-flash-lite,gemini-3.5-flash",
 ).split(",")
 ANALYZE_MODELS = [m.strip() for m in ANALYZE_MODELS if m.strip()]
 
 
 def _build_analyze_chat(model: str) -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
+    kwargs = dict(
         model=model,
         google_api_key=API_KEY,
         transport="rest",
-        max_output_tokens=4096,
+        max_output_tokens=8192,
     )
+    # gemini-2.5+ flash는 thinking 모델 — thinking 토큰이 output 예산을 먼저
+    # 소진하면 JSON 응답이 중간에 잘린다. 분석은 thinking이 불필요하므로 비활성화.
+    if "2.0" not in model and "1.5" not in model:
+        kwargs["thinking_budget"] = 0
+    return ChatGoogleGenerativeAI(**kwargs)
 
 # 시뮬레이션용 모델: gemma-4-31b-it (분석 모델과 별도 할당량)
 SIMULATION_MODEL = os.environ.get("simulation_model", "gemma-4-31b-it")

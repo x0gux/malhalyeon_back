@@ -12,6 +12,44 @@ analyze_bp = Blueprint('analyze_bp', __name__)
 logger = logging.getLogger(__name__)
 
 
+def _extract_json(content: str) -> str | None:
+    """모델 응답에서 JSON 객체 문자열을 추출. 마크다운 코드블록 제거 후
+    중괄호 균형을 맞춰 첫 완결 객체를 잘라낸다. 못 찾으면 None."""
+    if not content:
+        return None
+    text = content.strip()
+    # ```json ... ``` 코드블록 제거
+    fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        else:
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start:i + 1]
+    return None  # 닫히지 않음 = 응답 잘림
+
+
 def _save_analyze_history(uid: str, result: dict) -> None:
     """분석 완료 후 이력 저장 + 유저 analyze_count 증가."""
     try:
@@ -300,25 +338,28 @@ compatibility_issues는 대화 패턴만으로 일반적인 관계 충돌 지점
 }}
 """
 
-        result = invoke_analyze(prompt)
-        if isinstance(result.content, list):
-            content = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in result.content])
-        else:
-            content = str(result.content)
+        # 응답이 잘려 JSON 파싱이 실패하면 재호출(모델 폴백 포함)로 재시도
+        last_raw = ""
+        for attempt in range(2):
+            result = invoke_analyze(prompt)
+            if isinstance(result.content, list):
+                content = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in result.content])
+            else:
+                content = str(result.content)
 
-        content = content.strip()
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            json_str = _extract_json(content)
+            last_raw = json_str or content.strip()
+            if json_str:
+                try:
+                    analysis_data = json.loads(json_str, strict=False)
+                    _save_analyze_history(g.uid, analysis_data)
+                    return jsonify(analysis_data)
+                except json.JSONDecodeError as decode_error:
+                    logger.warning("JSON 파싱 실패 (attempt %d): %s", attempt + 1, decode_error)
+            else:
+                logger.warning("JSON 형식 미발견 (attempt %d)", attempt + 1)
 
-        if json_match:
-            json_str = json_match.group()
-            try:
-                analysis_data = json.loads(json_str, strict=False)
-                _save_analyze_history(g.uid, analysis_data)
-                return jsonify(analysis_data)
-            except json.JSONDecodeError as decode_error:
-                return jsonify({"error": f"JSON 파싱 오류: {str(decode_error)}", "raw": json_str}), 500
-        else:
-            return jsonify({"error": "JSON 형식을 찾을 수 없습니다.", "raw": content}), 500
+        return jsonify({"error": "분석 결과 생성에 실패했습니다. 다시 시도해주세요.", "raw": last_raw}), 500
 
     except Exception as e:
         return jsonify({"error": f"서버 오류: {str(e)}"}), 500
