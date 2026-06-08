@@ -108,6 +108,19 @@ def _parse_feedback(raw: str):
     return None
 
 
+_FALLBACK_OPENING = "오늘 뭐했어? 연락이 좀 뜸한 것 같아서."
+_FALLBACK_REPLY = "왜 말이 없어? 무슨 일 있는 거야?"
+
+
+def _opponent_message(prompt: str, fallback: str) -> str:
+    """상대방 메시지 생성. 빈 응답이면 한 번 재시도하고, 그래도 비면 폴백 사용."""
+    for _ in range(2):
+        text = extract_text(invoke_simulation(prompt))
+        if text:
+            return text
+    return fallback
+
+
 def _invoke_and_parse_choices(prompt: str) -> dict:
     return _parse_choices(extract_text(invoke_simulation(prompt)))
 
@@ -187,10 +200,10 @@ def start_simulation():
 {{"choices":[{{"id":1,"text":"...","strategy":"경계 설정","recommended":true}},{{"id":2,"text":"...","strategy":"달래기","recommended":false}},{{"id":3,"text":"...","strategy":"감정적 반응","recommended":false}},{{"id":4,"text":"...","strategy":"무시/전환","recommended":false}}]}}"""
 
         with ThreadPoolExecutor(max_workers=2) as executor:
-            future_msg = executor.submit(invoke_simulation, opening_prompt)
+            future_msg = executor.submit(_opponent_message, opening_prompt, _FALLBACK_OPENING)
             future_choices = executor.submit(_invoke_and_parse_choices, initial_choices_prompt)
 
-            opponent_message = extract_text(future_msg.result())
+            opponent_message = future_msg.result()
             choices_data = future_choices.result()
 
         return jsonify({
@@ -292,7 +305,7 @@ def simulate_reply():
 위 대화에 이어 상대방으로서 답하라. 1~3문장."""
 
         # 2. 상대방 응답 생성 (선택지/피드백보다 먼저 필요)
-        opponent_message = extract_text(invoke_simulation(reply_prompt))
+        opponent_message = _opponent_message(reply_prompt, _FALLBACK_REPLY)
 
         # 3. 선택지와 피드백을 병렬 생성
         updated_history = history + [

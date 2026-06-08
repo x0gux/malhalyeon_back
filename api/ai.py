@@ -2,9 +2,23 @@ import os
 import time
 import re
 import threading
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import (
+    ChatGoogleGenerativeAI,
+    HarmCategory,
+    HarmBlockThreshold,
+)
 
 API_KEY = os.environ.get("ai_key")
+
+# 데이트폭력 시뮬레이션은 집착·통제·위협 언어를 다루므로 안전필터가 응답을
+# 통째로 차단(빈 응답)하는 일이 잦다. 차단을 끄지 않으면 상대방 메시지가 비어
+# 프론트에 아무것도 표시되지 않는다.
+_NO_BLOCK_SAFETY = {
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+}
 
 # 분석용 모델: gemini-2.0-flash (무료 티어 200 req/day)
 chat = ChatGoogleGenerativeAI(
@@ -28,6 +42,7 @@ def _build_analyze_chat(model: str) -> ChatGoogleGenerativeAI:
         google_api_key=API_KEY,
         transport="rest",
         max_output_tokens=8192,
+        safety_settings=_NO_BLOCK_SAFETY,
     )
     # gemini-2.5+ flash는 thinking 모델 — thinking 토큰이 output 예산을 먼저
     # 소진하면 JSON 응답이 중간에 잘린다. 분석은 thinking이 불필요하므로 비활성화.
@@ -41,7 +56,8 @@ chat_simulation = ChatGoogleGenerativeAI(
     model=SIMULATION_MODEL,
     google_api_key=API_KEY,
     transport="rest",
-    max_output_tokens=1024  # 시뮬레이션은 짧은 응답만 필요
+    max_output_tokens=1024,  # 시뮬레이션은 짧은 응답만 필요
+    safety_settings=_NO_BLOCK_SAFETY,
 )
 
 # ───────────────────────────────────────────
