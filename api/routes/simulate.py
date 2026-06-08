@@ -24,17 +24,33 @@ def extract_text(result) -> str:
 
 
 def build_system_prompt(analysis_items: list, danger_level: str) -> str:
-    behaviors = "\n".join(
-        f"  - {item['behavior']} (빈도: {item['count']}회, 위험도: {item['likability_score']})"
-        for item in analysis_items
-    )
+    behavior_blocks = []
+    for item in analysis_items:
+        line = f"  - {item['behavior']} (빈도: {item['count']}회, 위험도: {item['likability_score']})"
+        if item.get('description'):
+            line += f"\n    ({item['description']})"
+        behavior_blocks.append(line)
+    behaviors = "\n".join(behavior_blocks)
+
+    evidence_parts = []
+    for item in analysis_items:
+        ev = item.get('evidence')
+        if ev:
+            evidence_parts.append(f"[{item['behavior']}]\n{ev}")
+    evidence_section = "\n\n".join(evidence_parts) if evidence_parts else "없음"
+
     return f"""너는 연애 대응 훈련 시뮬레이터의 '상대방' AI다.
+
 [위험 행동 패턴]
 {behaviors}
 [위험 등급] {danger_level}
+
+[실제 분석된 대화 샘플 — 이 사람의 말투·어조·문체를 정확히 모방하라]
+{evidence_section}
+
 [규칙]
-- 위 패턴을 자연스럽게 대화에 녹여라.
-- 실제 대화 파일 기반, 상대방 말투 사용.
+- 위 대화 샘플에서 '상대방'의 말투, 어조, 문장 길이, 표현 방식을 그대로 따라 하라.
+- 위 패턴에 나타난 행동을 자연스럽게 대화에 녹여라.
 - 위험 등급 높을수록 집착·통제적 언어.
 - 카카오톡 말투, 1~3문장, 이모티콘 금지(ㅋㅋ/ㅠㅠ 허용), 이름 언급 금지.
 - 너='상대방', 사용자='본인'.
