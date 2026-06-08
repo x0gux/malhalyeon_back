@@ -1,10 +1,41 @@
 import json
 import re
+import logging
+from datetime import datetime, timezone
 import pandas as pd
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from api.ai import chat, invoke_with_retry
+from api.firebase_config import get_db
+from api.middleware.auth import require_auth
 
 analyze_bp = Blueprint('analyze_bp', __name__)
+logger = logging.getLogger(__name__)
+
+
+def _save_analyze_history(uid: str, result: dict) -> None:
+    """분석 완료 후 이력 저장 + 유저 analyze_count 증가."""
+    try:
+        from google.cloud.firestore import Increment
+        db = get_db()
+        now = datetime.now(timezone.utc)
+
+        history_ref = db.collection("analyze_history").document()
+        user_ref = db.collection("users").document(uid)
+
+        batch = db.batch()
+        batch.set(history_ref, {
+            "uid": uid,
+            "danger_level": result.get("danger_level"),
+            "danger_comment": result.get("danger_comment"),
+            "items_count": len(result.get("analysis_items", [])),
+            "created_at": now,
+        })
+        batch.set(user_ref, {"analyze_count": Increment(1)}, merge=True)
+        batch.commit()
+
+        result["analyze_id"] = history_ref.id
+    except Exception as e:
+        logger.error("analyze_history 저장 실패 (분석 결과는 정상 반환): %s", e)
 
 # -----------------------------------------------------------------
 # 2024년 여성가족부 여성폭력 실태조사 기반 위험 행동 분류 체계
@@ -43,6 +74,7 @@ VIOLENCE_TAXONOMY = """
 """
 
 @analyze_bp.route('/api/analyze', methods=['POST'])
+@require_auth
 def analyze_chat():
     """
     카톡 대화 분석 API
@@ -277,6 +309,7 @@ compatibility_issues는 대화 패턴만으로 일반적인 관계 충돌 지점
             json_str = json_match.group()
             try:
                 analysis_data = json.loads(json_str, strict=False)
+                _save_analyze_history(g.uid, analysis_data)
                 return jsonify(analysis_data)
             except json.JSONDecodeError as decode_error:
                 return jsonify({"error": f"JSON 파싱 오류: {str(decode_error)}", "raw": json_str}), 500

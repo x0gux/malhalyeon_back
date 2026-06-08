@@ -8,6 +8,7 @@ from api.routes.quiz import quiz_bp
 from api.routes.analyze import analyze_bp
 from api.routes.mypage import mypage_bp
 from api.routes.simulate import simulate_bp
+from api.routes.community import community_bp
 
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -24,6 +25,7 @@ app.register_blueprint(quiz_bp)
 app.register_blueprint(analyze_bp)
 app.register_blueprint(mypage_bp)
 app.register_blueprint(simulate_bp)
+app.register_blueprint(community_bp)
 
 swagger = Swagger(app)
 

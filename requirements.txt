@@ -4,3 +4,4 @@ langchain-google-genai
 flasgger
 flask-cors
 beautifulsoup4
+firebase-admin
