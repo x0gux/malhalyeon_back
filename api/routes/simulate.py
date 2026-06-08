@@ -1,16 +1,16 @@
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from flask import Blueprint, request, jsonify
 from api.ai import invoke_simulation
 
 simulate_bp = Blueprint('simulate_bp', __name__)
 
+
 def extract_text(result) -> str:
-    """Safely extract plain text from a LangChain LLM result.
-    Handles both str content (old SDK) and list-of-blocks content (new SDK)."""
+    """Safely extract plain text from a LangChain LLM result."""
     content = result.content if hasattr(result, 'content') else result
     if isinstance(content, list):
-        # New SDK returns a list of content blocks; pick the text ones
         parts = []
         for block in content:
             if isinstance(block, str):
@@ -22,116 +22,82 @@ def extract_text(result) -> str:
         return ''.join(parts).strip()
     return str(content).strip()
 
-# ───────────────────────────────────────────
-# 시뮬레이션 시스템 프롬프트 생성
-# analysis_items의 위험 패턴을 기반으로 상대방 페르소나를 구성
-# ───────────────────────────────────────────
+
 def build_system_prompt(analysis_items: list, danger_level: str) -> str:
     behaviors = "\n".join(
         f"  - {item['behavior']} (빈도: {item['count']}회, 위험도: {item['likability_score']})"
         for item in analysis_items
     )
-
-    return f"""
-너는 연애 대응 훈련 시뮬레이터에서 '상대방' 역할을 맡은 AI다.
-아래 분석된 실제 위험 행동 패턴을 바탕으로 상대방 캐릭터를 연기하라.
-
-[상대방의 위험 행동 패턴]
+    return f"""너는 연애 대응 훈련 시뮬레이터의 '상대방' AI다.
+[위험 행동 패턴]
 {behaviors}
+[위험 등급] {danger_level}
+[규칙]
+- 위 패턴을 자연스럽게 대화에 녹여라.
+- 실제 대화 파일 기반, 상대방 말투 사용.
+- 위험 등급 높을수록 집착·통제적 언어.
+- 카카오톡 말투, 1~3문장, 이모티콘 금지(ㅋㅋ/ㅠㅠ 허용), 이름 언급 금지.
+- 너='상대방', 사용자='본인'.
+- 올바른 대응 → 잠시 누그러지다 패턴 반복. 잘못된 대응 → 패턴 강화."""
 
-[전체 위험 등급]
-{danger_level}
 
-[연기 규칙]
-- 반드시 위 패턴에서 나타난 행동만 자연스럽게 대화에 녹여라.
-- 반드시 analysis를 진행한 file의 대화를 기반으로 대화해라.
-- 실제 상황과 동일한 상황극으로 대화해라.
-- 상대방의 말투로 대화하라.
-- 위험 등급이 높을수록 더 집착적·통제적 언어를 사용하라.
-- 실제 연인 사이의 일상 대화처럼 자연스럽게 시작하다가 위험 패턴을 드러내라.
-- 짧고 현실감 있는 카카오톡 말투로 대화하라. 단 이모티콘 사용금지( ㅋㅋ, ㅠㅠ 등 자연스럽게 사용)
-- 한 번에 1~3문장 이내로 짧게 답하라.
-- 상대방 이름이나 본인 이름은 절대 언급하지 마라.
-- 너는 '상대방'이고 사용자는 '본인'이다.
-- 사용자가 올바른 대응을 하면 잠시 누그러지는 척하다가 다시 패턴을 반복하라.
-- 사용자가 잘못된 대응을 하면 패턴을 더 강하게 드러내라.
-"""
-
-# ───────────────────────────────────────────
-# 선택지 생성 프롬프트
-# ───────────────────────────────────────────
 def build_choices_prompt(conversation_history: list, analysis_items: list) -> str:
     history_text = "\n".join(
         f"{'본인' if m['role'] == 'user' else '상대방'}: {m['content']}"
-        for m in conversation_history[-6:]  # 최근 6턴만 참고
+        for m in conversation_history[-4:]
     )
-
     behaviors = ", ".join(item['behavior'] for item in analysis_items)
-
-    return f"""
-아래 대화에서 상대방이 방금 한 말에 대해 본인이 선택할 수 있는 대응 선택지 4개를 만들어라.
-
-[위험 행동 패턴]
-{behaviors}
-
+    return f"""[위험 패턴] {behaviors}
 [최근 대화]
 {history_text}
 
-[선택지 규칙]
-- 선택지는 반드시 4개.
-- 각 선택지는 서로 다른 전략을 가져야 한다.
-  1번: 건강한 경계 설정 (권장)
-  2번: 부드럽게 달래는 대응 (관계 유지 시도)
-  3번: 감정적으로 반응 (비권장)
-  4번: 무시 또는 화제 전환
-- 실제 카카오톡에서 보낼 법한 짧고 자연스러운 말투로 작성하라.
-- 이름 언급 금지.
+상대방 마지막 말에 대한 대응 선택지 4개 생성.
+1:경계 설정(권장) 2:달래기 3:감정적 반응 4:무시/전환
+카카오톡 말투, 이름 금지.
 
-출력 형식 (JSON만 반환, 마크다운 금지):
-{{
-  "choices": [
-    {{"id": 1, "text": "선택지 내용", "strategy": "경계 설정", "recommended": true}},
-    {{"id": 2, "text": "선택지 내용", "strategy": "달래기", "recommended": false}},
-    {{"id": 3, "text": "선택지 내용", "strategy": "감정적 반응", "recommended": false}},
-    {{"id": 4, "text": "선택지 내용", "strategy": "무시/전환", "recommended": false}}
-  ]
-}}
-"""
+출력 (JSON만, 마크다운 금지):
+{{"choices":[{{"id":1,"text":"...","strategy":"경계 설정","recommended":true}},{{"id":2,"text":"...","strategy":"달래기","recommended":false}},{{"id":3,"text":"...","strategy":"감정적 반응","recommended":false}},{{"id":4,"text":"...","strategy":"무시/전환","recommended":false}}]}}"""
 
-# ───────────────────────────────────────────
-# 피드백 생성 프롬프트
-# ───────────────────────────────────────────
+
 def build_feedback_prompt(user_choice: str, opponent_response: str, analysis_items: list) -> str:
     behaviors = ", ".join(item['behavior'] for item in analysis_items)
+    return f"""[위험 패턴] {behaviors}
+[본인 대응] {user_choice}
+[상대방 반응] {opponent_response}
 
-    return f"""
-연애 대응 훈련에서 본인이 아래와 같이 대응했다.
+대응 평가 (JSON만, 마크다운 금지):
+{{"score":0,"label":"잘했어요/아쉬워요/위험해요 중 하나","feedback":"30자 이내","tip":"30자 이내 또는 null"}}
 
-[상대방의 위험 행동 패턴]
-{behaviors}
+score: 경계 설정=80~100, 달래기=40~60, 감정적 반응=10~30, 무시/전환=50~70"""
 
-[본인의 대응]
-{user_choice}
 
-[상대방의 반응]
-{opponent_response}
+def _parse_choices(raw: str) -> dict:
+    data = {"choices": []}
+    m = re.search(r'\{.*\}', raw, re.DOTALL)
+    if m:
+        try:
+            data = json.loads(m.group())
+        except json.JSONDecodeError:
+            pass
+    return data
 
-이 대응이 얼마나 적절했는지 평가하고 짧은 피드백을 제공하라.
 
-출력 형식 (JSON만 반환, 마크다운 금지):
-{{
-  "score": 0,
-  "label": "잘했어요 / 아쉬워요 / 위험해요",
-  "feedback": "피드백 (30자 이내)",
-  "tip": "더 나은 대응 팁 (30자 이내, 없으면 null)"
-}}
+def _parse_feedback(raw: str):
+    m = re.search(r'\{.*\}', raw, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group())
+        except json.JSONDecodeError:
+            pass
+    return None
 
-score 기준:
-- 경계를 명확히 설정: 80~100
-- 부드럽게 달랬지만 패턴 강화: 40~60
-- 감정적으로 반응해 상황 악화: 10~30
-- 무시/전환으로 일시 회피: 50~70
-"""
+
+def _invoke_and_parse_choices(prompt: str) -> dict:
+    return _parse_choices(extract_text(invoke_simulation(prompt)))
+
+
+def _invoke_and_parse_feedback(prompt: str):
+    return _parse_feedback(extract_text(invoke_simulation(prompt)))
 
 
 # ───────────────────────────────────────────
@@ -141,7 +107,7 @@ score 기준:
 @simulate_bp.route('/api/simulate/start', methods=['POST'])
 def start_simulation():
     """
-    시뮬레이션 시작 — 첫 번째 상대방 메시지 생성
+    시뮬레이션 시작 — 첫 번째 상대방 메시지 및 초기 선택지 병렬 생성
     ---
     tags:
       - Simulate
@@ -164,12 +130,14 @@ def start_simulation():
               example: "경고"
     responses:
       200:
-        description: 첫 번째 상대방 메시지 및 턴 번호
+        description: 첫 번째 상대방 메시지, 초기 선택지, 턴 번호
         schema:
           type: object
           properties:
             message:
               type: string
+            choices:
+              type: array
             turn:
               type: integer
       400:
@@ -187,18 +155,31 @@ def start_simulation():
 
         system_prompt = build_system_prompt(analysis_items, danger_level)
 
-        opening_prompt = f"""
-{system_prompt}
+        opening_prompt = f"""{system_prompt}
 
-지금 대화를 시작하라. 일상적인 말투로 자연스럽게 첫 메시지를 보내되,
-위험 패턴이 은근히 느껴지도록 시작하라. 1~2문장으로 짧게.
-"""
+지금 대화를 시작하라. 일상적인 말투로 첫 메시지를 보내되 위험 패턴이 은근히 느껴지게. 1~2문장."""
 
-        result = invoke_simulation(opening_prompt)
-        content = extract_text(result)
+        behaviors = ", ".join(item['behavior'] for item in analysis_items)
+        initial_choices_prompt = f"""[위험 패턴] {behaviors}
+
+이 위험 패턴을 가진 상대방이 막 대화를 시작했다.
+상대방의 첫 메시지에 대응할 선택지 4개 생성.
+1:경계 설정(권장) 2:달래기 3:감정적 반응 4:무시/전환
+카카오톡 말투, 이름 금지.
+
+출력 (JSON만, 마크다운 금지):
+{{"choices":[{{"id":1,"text":"...","strategy":"경계 설정","recommended":true}},{{"id":2,"text":"...","strategy":"달래기","recommended":false}},{{"id":3,"text":"...","strategy":"감정적 반응","recommended":false}},{{"id":4,"text":"...","strategy":"무시/전환","recommended":false}}]}}"""
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_msg = executor.submit(invoke_simulation, opening_prompt)
+            future_choices = executor.submit(_invoke_and_parse_choices, initial_choices_prompt)
+
+            opponent_message = extract_text(future_msg.result())
+            choices_data = future_choices.result()
 
         return jsonify({
-            "message": content,
+            "message": opponent_message,
+            "choices": choices_data.get("choices", []),
             "turn": 1
         })
 
@@ -267,21 +248,11 @@ def simulate_reply():
         if not user_message:
             return jsonify({"error": "user_message가 필요합니다."}), 400
 
-        # 시뮬레이션 시작 시 첫 선택지 생성 대응 (첫 턴 분기)
+        # 하위 호환: 첫 턴 선택지 요청 (start에서 이미 반환하나 프론트 구버전 대응)
         if user_message == '시뮬레이션 시작':
             opponent_message = history[0]['content'] if history else "오늘 뭐해?"
             choices_prompt = build_choices_prompt(history, analysis_items)
-            choices_result = invoke_simulation(choices_prompt)
-            choices_raw = extract_text(choices_result)
-
-            choices_data = {"choices": []}
-            json_match = re.search(r'\{.*\}', choices_raw, re.DOTALL)
-            if json_match:
-                try:
-                    choices_data = json.loads(json_match.group())
-                except json.JSONDecodeError:
-                    pass
-
+            choices_data = _invoke_and_parse_choices(choices_prompt)
             return jsonify({
                 "opponent_message": opponent_message,
                 "choices": choices_data.get("choices", []),
@@ -289,55 +260,43 @@ def simulate_reply():
                 "turn": 1
             })
 
-        # 1. 상대방 응답 생성
+        # 1. 시스템 프롬프트 한 번 생성 후 재사용
         system_prompt = build_system_prompt(analysis_items, danger_level)
         history_text = "\n".join(
             f"{'본인' if m['role'] == 'user' else '상대방'}: {m['content']}"
             for m in history
         )
 
-        reply_prompt = f"""
-{system_prompt}
+        reply_prompt = f"""{system_prompt}
 
 [지금까지 대화]
 {history_text}
 본인: {user_message}
 
-위 대화에 이어서 상대방으로서 자연스럽게 답하라. 1~3문장 이내.
-"""
+위 대화에 이어 상대방으로서 답하라. 1~3문장."""
 
-        reply_result = invoke_simulation(reply_prompt)
-        opponent_message = extract_text(reply_result)
+        # 2. 상대방 응답 생성 (선택지/피드백보다 먼저 필요)
+        opponent_message = extract_text(invoke_simulation(reply_prompt))
 
-        # 2. 다음 선택지 생성
+        # 3. 선택지와 피드백을 병렬 생성
         updated_history = history + [
             {"role": "user", "content": user_message},
             {"role": "assistant", "content": opponent_message}
         ]
         choices_prompt = build_choices_prompt(updated_history, analysis_items)
-        choices_result = invoke_simulation(choices_prompt)
-        choices_raw = extract_text(choices_result)
 
-        choices_data = {"choices": []}
-        json_match = re.search(r'\{.*\}', choices_raw, re.DOTALL)
-        if json_match:
-            try:
-                choices_data = json.loads(json_match.group())
-            except json.JSONDecodeError:
-                pass
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_choices = executor.submit(_invoke_and_parse_choices, choices_prompt)
+            future_feedback = (
+                executor.submit(
+                    _invoke_and_parse_feedback,
+                    build_feedback_prompt(user_message, opponent_message, analysis_items)
+                )
+                if history else None
+            )
 
-        # 3. 직전 본인 대응에 대한 피드백 생성 (첫 턴 제외)
-        feedback_data = None
-        if history:
-            feedback_prompt = build_feedback_prompt(user_message, opponent_message, analysis_items)
-            feedback_result = invoke_simulation(feedback_prompt)
-            feedback_raw = extract_text(feedback_result)
-            fb_match = re.search(r'\{.*\}', feedback_raw, re.DOTALL)
-            if fb_match:
-                try:
-                    feedback_data = json.loads(fb_match.group())
-                except json.JSONDecodeError:
-                    pass
+            choices_data = future_choices.result()
+            feedback_data = future_feedback.result() if future_feedback else None
 
         return jsonify({
             "opponent_message": opponent_message,
