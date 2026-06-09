@@ -65,7 +65,12 @@ chat_simulation = ChatGoogleGenerativeAI(
 # reply 한 번에 상대방 응답 + 선택지 + 피드백을 모두 같은 모델로 호출하면 Vercel
 # 함수 타임아웃(→504, CORS 헤더 누락)을 넘긴다. 선택지/피드백만 빠른 모델로 분리해
 # 전체 응답 시간을 줄인다. (상대방 응답은 gemma 그대로)
-AUX_MODEL = os.environ.get("feedback_model", "gemini-2.0-flash")
+#
+# 기본값을 gemini-2.5-flash-lite로 둔다 — gemini-2.0-flash는 분석(chat)과 무료
+# 티어 할당량(200 RPD)을 공유해, 분석으로 소진되면 aux 호출이 매번 429를 맞고
+# 60초씩 재시도하다 타임아웃난다. 2.5-flash-lite는 분석 폴백 체인의 3순위라
+# 평소 할당량이 비어 있고 속도도 빠르다.
+AUX_MODEL = os.environ.get("feedback_model", "gemini-2.5-flash-lite")
 
 
 def _build_aux_chat(model: str) -> ChatGoogleGenerativeAI:
@@ -121,8 +126,13 @@ _analyze_limiters = {m: RateLimiter(max_per_minute=50) for m in ANALYZE_MODELS}
 # ───────────────────────────────────────────
 # Retry Logic
 # ───────────────────────────────────────────
-def invoke_with_retry(prompt_text, max_retries=3, chat_instance=None, limiter=None):
-    """Uses the specified or global chat instance with retry backoff logic."""
+def invoke_with_retry(prompt_text, max_retries=3, chat_instance=None, limiter=None, max_backoff=None):
+    """Uses the specified or global chat instance with retry backoff logic.
+
+    max_backoff: 429/503 재시도 대기 시간 상한(초). 서버리스(Vercel) 함수는
+    실행시간 제한이 있어 60초씩 대기하면 타임아웃→504로 죽고 CORS 헤더가 빠진다.
+    aux처럼 시간이 빠듯한 경로는 작은 값을 줘 빠르게 실패(→Flask가 응답 반환,
+    CORS 헤더 유지)하도록 한다. None이면 기존 동작(상한 없음)."""
     target_chat = chat_instance or chat
     target_limiter = limiter or _chat_limiter
     for i in range(max_retries):
@@ -136,10 +146,14 @@ def invoke_with_retry(prompt_text, max_retries=3, chat_instance=None, limiter=No
                 match = re.search(r'retry in (\d+)', err)
                 if match:
                     wait_sec = int(match.group(1)) + 2
+                if max_backoff is not None:
+                    wait_sec = min(wait_sec, max_backoff)
                 print(f"Rate limit 초과 — {wait_sec}초 대기 후 재시도 ({i+1}/{max_retries})")
                 time.sleep(wait_sec)
             elif "503" in err or "high demand" in err.lower():
                 wait_sec = 2 ** i
+                if max_backoff is not None:
+                    wait_sec = min(wait_sec, max_backoff)
                 print(f"서버 과부하 재시도 중... ({i+1}/{max_retries})")
                 time.sleep(wait_sec)
             else:
@@ -186,11 +200,16 @@ def invoke_simulation(prompt_text, max_retries=3):
     )
 
 
-def invoke_auxiliary(prompt_text, max_retries=3):
-    """선택지·피드백 등 구조화 출력 전용 호출. 빠른 보조 모델을 사용한다."""
+def invoke_auxiliary(prompt_text, max_retries=2):
+    """선택지·피드백 등 구조화 출력 전용 호출. 빠른 보조 모델을 사용한다.
+
+    서버리스 타임아웃을 넘기지 않도록 재시도 대기를 5초로 캡한다 — 429가 나도
+    60초 대기하지 않고 빠르게 실패해, 함수가 죽는 대신 Flask가 (CORS 헤더 붙은)
+    오류 응답을 반환한다."""
     return invoke_with_retry(
         prompt_text,
         max_retries,
         chat_instance=chat_aux,
-        limiter=_aux_limiter
+        limiter=_aux_limiter,
+        max_backoff=5,
     )
