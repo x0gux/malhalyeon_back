@@ -2,7 +2,7 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from flask import Blueprint, request, jsonify
-from api.ai import invoke_simulation
+from api.ai import invoke_simulation, invoke_auxiliary
 
 simulate_bp = Blueprint('simulate_bp', __name__)
 
@@ -122,11 +122,13 @@ def _opponent_message(prompt: str, fallback: str) -> str:
 
 
 def _invoke_and_parse_choices(prompt: str) -> dict:
-    return _parse_choices(extract_text(invoke_simulation(prompt)))
+    # 선택지는 JSON 구조화 출력 — 말투 모방이 불필요하므로 빠른 보조 모델 사용.
+    return _parse_choices(extract_text(invoke_auxiliary(prompt)))
 
 
 def _invoke_and_parse_feedback(prompt: str):
-    return _parse_feedback(extract_text(invoke_simulation(prompt)))
+    # 피드백도 JSON 구조화 출력 — 빠른 보조 모델 사용.
+    return _parse_feedback(extract_text(invoke_auxiliary(prompt)))
 
 
 # ───────────────────────────────────────────

@@ -60,6 +60,31 @@ chat_simulation = ChatGoogleGenerativeAI(
     safety_settings=_NO_BLOCK_SAFETY,
 )
 
+# 보조 출력용 모델: 선택지·피드백은 JSON 구조화 출력이라 말투 모방이 불필요해
+# 품질 민감도가 낮다. 시뮬레이션(상대방) 모델 gemma-4-31b는 호출당 ~20초로 느려,
+# reply 한 번에 상대방 응답 + 선택지 + 피드백을 모두 같은 모델로 호출하면 Vercel
+# 함수 타임아웃(→504, CORS 헤더 누락)을 넘긴다. 선택지/피드백만 빠른 모델로 분리해
+# 전체 응답 시간을 줄인다. (상대방 응답은 gemma 그대로)
+AUX_MODEL = os.environ.get("feedback_model", "gemini-2.0-flash")
+
+
+def _build_aux_chat(model: str) -> ChatGoogleGenerativeAI:
+    kwargs = dict(
+        model=model,
+        google_api_key=API_KEY,
+        transport="rest",
+        max_output_tokens=1024,
+        safety_settings=_NO_BLOCK_SAFETY,
+    )
+    # gemini-2.5+ flash는 thinking 모델 — thinking 토큰이 지연·잘림을 유발하므로
+    # 구조화 출력엔 비활성화. (gemma·2.0·1.5는 thinking 미지원)
+    if "2.0" not in model and "1.5" not in model and "gemma" not in model:
+        kwargs["thinking_budget"] = 0
+    return ChatGoogleGenerativeAI(**kwargs)
+
+
+chat_aux = _build_aux_chat(AUX_MODEL)
+
 # ───────────────────────────────────────────
 # 모델별 Rate Limiter (thread-safe)
 # ───────────────────────────────────────────
@@ -87,6 +112,7 @@ class RateLimiter:
 
 _chat_limiter = RateLimiter(max_per_minute=50)
 _simulation_limiter = RateLimiter(max_per_minute=50)
+_aux_limiter = RateLimiter(max_per_minute=50)
 
 # 분석 폴백 체인용 모델별 인스턴스 + rate limiter
 _analyze_chats = {m: _build_analyze_chat(m) for m in ANALYZE_MODELS}
@@ -157,4 +183,14 @@ def invoke_simulation(prompt_text, max_retries=3):
         max_retries,
         chat_instance=chat_simulation,
         limiter=_simulation_limiter
+    )
+
+
+def invoke_auxiliary(prompt_text, max_retries=3):
+    """선택지·피드백 등 구조화 출력 전용 호출. 빠른 보조 모델을 사용한다."""
+    return invoke_with_retry(
+        prompt_text,
+        max_retries,
+        chat_instance=chat_aux,
+        limiter=_aux_limiter
     )
