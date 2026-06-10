@@ -2,7 +2,7 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from flask import Blueprint, request, jsonify
-from api.ai import invoke_simulation, invoke_auxiliary
+from api.ai import invoke_simulation, invoke_simulation_fallback, invoke_auxiliary
 
 simulate_bp = Blueprint('simulate_bp', __name__)
 
@@ -113,11 +113,27 @@ _FALLBACK_REPLY = "왜 말이 없어? 무슨 일 있는 거야?"
 
 
 def _opponent_message(prompt: str, fallback: str) -> str:
-    """상대방 메시지 생성. 빈 응답이면 한 번 재시도하고, 그래도 비면 폴백 사용."""
-    for _ in range(2):
-        text = extract_text(invoke_simulation(prompt))
+    """상대방 메시지 생성.
+
+    1) gemma로 생성, 빈 응답이면 한 번 더 시도.
+    2) gemma가 예외(429/503 소진)나 빈 응답으로 실패하면 빠른 gemini로 1회 폴백.
+    3) 그래도 비면 고정 문구.
+    gemma 호출이 예외를 던져도 시뮬레이션 전체가 500으로 죽지 않게 한다."""
+    try:
+        for _ in range(2):
+            text = extract_text(invoke_simulation(prompt))
+            if text:
+                return text
+    except Exception as e:
+        print(f"상대방(gemma) 응답 실패 — gemini 폴백: {e}")
+
+    try:
+        text = extract_text(invoke_simulation_fallback(prompt))
         if text:
             return text
+    except Exception as e:
+        print(f"상대방 gemini 폴백도 실패 — 고정 문구 사용: {e}")
+
     return fallback
 
 

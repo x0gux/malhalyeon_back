@@ -24,7 +24,6 @@ _NO_BLOCK_SAFETY = {
 chat = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash",
     google_api_key=API_KEY,
-    transport="rest",
     max_output_tokens=4096
 )
 
@@ -40,7 +39,6 @@ def _build_analyze_chat(model: str) -> ChatGoogleGenerativeAI:
     kwargs = dict(
         model=model,
         google_api_key=API_KEY,
-        transport="rest",
         max_output_tokens=8192,
         safety_settings=_NO_BLOCK_SAFETY,
     )
@@ -55,7 +53,6 @@ SIMULATION_MODEL = os.environ.get("simulation_model", "gemma-4-31b-it")
 chat_simulation = ChatGoogleGenerativeAI(
     model=SIMULATION_MODEL,
     google_api_key=API_KEY,
-    transport="rest",
     max_output_tokens=1024,  # 시뮬레이션은 짧은 응답만 필요
     safety_settings=_NO_BLOCK_SAFETY,
 )
@@ -66,23 +63,25 @@ chat_simulation = ChatGoogleGenerativeAI(
 # 함수 타임아웃(→504, CORS 헤더 누락)을 넘긴다. 선택지/피드백만 빠른 모델로 분리해
 # 전체 응답 시간을 줄인다. (상대방 응답은 gemma 그대로)
 #
-# 기본값을 gemini-2.5-flash-lite로 둔다 — gemini-2.0-flash는 분석(chat)과 무료
-# 티어 할당량(200 RPD)을 공유해, 분석으로 소진되면 aux 호출이 매번 429를 맞고
-# 60초씩 재시도하다 타임아웃난다. 2.5-flash-lite는 분석 폴백 체인의 3순위라
-# 평소 할당량이 비어 있고 속도도 빠르다.
-AUX_MODEL = os.environ.get("feedback_model", "gemini-2.5-flash-lite")
+# 기본값을 gemini-3.1-flash-lite로 둔다 — ANALYZE_MODELS 체인
+# (2.0-flash → 2.5-flash → 2.5-flash-lite → 3.5-flash)과 안 겹쳐 할당량 충돌이
+# 없고, 저지연·저비용(thinking 기본값 minimal)이라 구조화 출력·폴백에 적합하다.
+# gemini-2.0-flash는 분석 1순위라 소진 시 aux가 매번 429를 맞으므로 피한다.
+# (preview만 잡히는 환경이면 env로 gemini-3.1-flash-lite-preview 지정)
+AUX_MODEL = os.environ.get("feedback_model", "gemini-3.1-flash-lite")
 
 
 def _build_aux_chat(model: str) -> ChatGoogleGenerativeAI:
     kwargs = dict(
         model=model,
         google_api_key=API_KEY,
-        transport="rest",
         max_output_tokens=1024,
         safety_settings=_NO_BLOCK_SAFETY,
     )
-    # gemini-2.5+ flash는 thinking 모델 — thinking 토큰이 지연·잘림을 유발하므로
-    # 구조화 출력엔 비활성화. (gemma·2.0·1.5는 thinking 미지원)
+    # gemini-2.5+/3.x flash는 thinking 모델 — thinking 토큰이 지연·잘림을 유발하므로
+    # 구조화 출력엔 비활성화. thinking_budget=0은 3.x에서도 backward-compat로 허용
+    # (thinking_level과 동시 지정만 400). 3.1-flash-lite는 기본 minimal이라 더 안전.
+    # (gemma·2.0·1.5는 thinking 미지원)
     if "2.0" not in model and "1.5" not in model and "gemma" not in model:
         kwargs["thinking_budget"] = 0
     return ChatGoogleGenerativeAI(**kwargs)
@@ -190,13 +189,34 @@ def invoke_analyze(prompt_text, max_retries=3):
     raise last_err or Exception("AI 서버 응답 지연으로 분석에 실패했습니다.")
 
 
-def invoke_simulation(prompt_text, max_retries=3):
-    """Uses the simulation model with its own rate limiter."""
+def invoke_simulation(prompt_text, max_retries=2):
+    """상대방 응답(gemma) 전용 호출.
+
+    gemma도 서버리스 경로에서 동작하므로 429/503 backoff를 캡한다 — 캡이 없으면
+    429 한 번에 60초씩 sleep해 Vercel 함수 타임아웃(→504, CORS 헤더 누락)을 넘기거나
+    재시도 소진 후 generic 예외가 그대로 사용자에게 노출된다. 이 호출이 실패하면
+    호출측(_opponent_message)이 빠른 gemini 모델로 폴백한다."""
     return invoke_with_retry(
         prompt_text,
         max_retries,
         chat_instance=chat_simulation,
-        limiter=_simulation_limiter
+        limiter=_simulation_limiter,
+        max_backoff=4,
+    )
+
+
+def invoke_simulation_fallback(prompt_text, max_retries=2):
+    """상대방 응답 폴백 — gemma가 실패(429/503 소진·빈응답)했을 때만 사용.
+
+    말투 모방 품질은 gemma보다 떨어지지만, 빠른 gemini 보조 모델로 자연스러운
+    한 줄을 만들어 고정 문구보다 낫고 시뮬레이션 전체가 죽는 것을 막는다.
+    서버리스 타임아웃 방지를 위해 backoff를 5초로 캡한다."""
+    return invoke_with_retry(
+        prompt_text,
+        max_retries,
+        chat_instance=chat_aux,
+        limiter=_aux_limiter,
+        max_backoff=5,
     )
 
 
