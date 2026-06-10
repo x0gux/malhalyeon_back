@@ -21,10 +21,16 @@ _NO_BLOCK_SAFETY = {
 }
 
 # 분석용 모델: gemini-2.0-flash (무료 티어 200 req/day)
+#
+# max_retries=0: langchain 기본값(6)은 429/503을 받으면 우리 코드에 예외를 넘기기
+# 전에 내부적으로 지수 백오프 재시도를 6번 돌려, 할당량 소진된 모델 한 번에 ~36초를
+# 낭비한다. 재시도·모델 폴백은 invoke_with_retry/invoke_analyze가 직접 처리하므로
+# 내부 재시도는 끄고 즉시 예외를 받아 우리 로직이 다음 모델로 넘어가게 한다.
 chat = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash",
     google_api_key=API_KEY,
-    max_output_tokens=4096
+    max_output_tokens=4096,
+    max_retries=0,
 )
 
 # 분석용 모델 폴백 체인: 제한(429)에 걸리면 위 단계로 승급하며 재시도
@@ -41,6 +47,7 @@ def _build_analyze_chat(model: str) -> ChatGoogleGenerativeAI:
         google_api_key=API_KEY,
         max_output_tokens=8192,
         safety_settings=_NO_BLOCK_SAFETY,
+        max_retries=0,  # 내부 재시도 금지 — invoke_analyze가 모델 폴백을 직접 처리
     )
     # gemini-2.5+ flash는 thinking 모델 — thinking 토큰이 output 예산을 먼저
     # 소진하면 JSON 응답이 중간에 잘린다. 분석은 thinking이 불필요하므로 비활성화.
@@ -55,6 +62,7 @@ chat_simulation = ChatGoogleGenerativeAI(
     google_api_key=API_KEY,
     max_output_tokens=1024,  # 시뮬레이션은 짧은 응답만 필요
     safety_settings=_NO_BLOCK_SAFETY,
+    max_retries=0,  # gemma 실패 시 즉시 예외 → _opponent_message가 gemini로 폴백
 )
 
 # 보조 출력용 모델: 선택지·피드백은 JSON 구조화 출력이라 말투 모방이 불필요해
@@ -77,6 +85,7 @@ def _build_aux_chat(model: str) -> ChatGoogleGenerativeAI:
         google_api_key=API_KEY,
         max_output_tokens=1024,
         safety_settings=_NO_BLOCK_SAFETY,
+        max_retries=0,  # 내부 재시도 금지 — invoke_with_retry가 직접 처리(max_backoff 캡)
     )
     # gemini-2.5+/3.x flash는 thinking 모델 — thinking 토큰이 지연·잘림을 유발하므로
     # 구조화 출력엔 비활성화. thinking_budget=0은 3.x에서도 backward-compat로 허용
