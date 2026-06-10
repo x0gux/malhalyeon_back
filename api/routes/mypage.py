@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 import json
 import re
-from api.ai import invoke_with_retry
+from api.ai import invoke_analyze
 
 mypage_bp = Blueprint('mypage_bp', __name__)
 
@@ -67,7 +67,10 @@ def analyze_pattern():
 }}
 """
 
-        result = invoke_with_retry(prompt)
+        # 분석 폴백 체인 사용 — 단일 2.0-flash(상시 할당량 소진)에 묶이면 429 시
+        # 60초 sleep을 반복해 서버리스 타임아웃이 난다. invoke_analyze는 429에서
+        # 대기 없이 다음 모델로 승급한다.
+        result = invoke_analyze(prompt)
         if isinstance(result.content, list):
             content = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in result.content])
         else:

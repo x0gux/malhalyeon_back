@@ -2,7 +2,6 @@ import json
 import re
 import logging
 from datetime import datetime, timezone
-import pandas as pd
 from flask import Blueprint, request, jsonify, g
 from api.ai import invoke_analyze
 from api.firebase_config import get_db
@@ -159,6 +158,9 @@ def analyze_chat():
         filename = file.filename.lower()
 
         if filename.endswith('.csv'):
+            # pandas는 무겁다(import ~0.5초+). CSV 업로드일 때만 지연 import해
+            # 비분석 엔드포인트 콜드스타트가 매번 pandas를 로드하지 않게 한다.
+            import pandas as pd
             try:
                 df = pd.read_csv(file, encoding='utf-8-sig')
             except:
