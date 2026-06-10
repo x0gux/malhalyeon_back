@@ -33,10 +33,13 @@ chat = ChatGoogleGenerativeAI(
     max_retries=0,
 )
 
-# 분석용 모델 폴백 체인: 제한(429)에 걸리면 위 단계로 승급하며 재시도
+# 분석용 모델 폴백 체인: 제한(429)에 걸리면 다음 단계로 승급하며 재시도.
+# 1순위를 2.5-flash로 둔다 — 2.0-flash는 무료 티어 200 RPD가 상시 소진돼 1순위면
+# 매 분석이 429로 시작했다. 2.0-flash는 2순위 대안으로 남겨 할당량이 리셋된
+# 시간대나 2.5-flash가 소진됐을 때 호출되게 한다.
 ANALYZE_MODELS = os.environ.get(
     "analyze_models",
-    "gemini-2.0-flash,gemini-2.5-flash,gemini-2.5-flash-lite,gemini-3.5-flash",
+    "gemini-2.5-flash,gemini-2.0-flash,gemini-2.5-flash-lite,gemini-3.5-flash",
 ).split(",")
 ANALYZE_MODELS = [m.strip() for m in ANALYZE_MODELS if m.strip()]
 
