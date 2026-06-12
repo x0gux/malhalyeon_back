@@ -363,13 +363,16 @@ class CommentsView(MethodView):
             if not db.collection("posts").document(post_id).get().exists:
                 return jsonify({"error": "게시글을 찾을 수 없습니다.", "code": "NOT_FOUND"}), 404
 
+            # post_id 필터 + created_at 정렬을 함께 쓰면 복합 색인이 필요하므로,
+            # 필터만 Firestore에서 수행하고 정렬은 애플리케이션에서 처리한다.
             docs = (
                 db.collection("comments")
                 .where("post_id", "==", post_id)
-                .order_by("created_at")
                 .stream()
             )
-            return jsonify({"comments": [_doc_to_comment(d) for d in docs]})
+            comments = [_doc_to_comment(d) for d in docs]
+            comments.sort(key=lambda c: c.get("created_at") or "")
+            return jsonify({"comments": comments})
 
         except Exception as e:
             return jsonify({"error": f"댓글 조회 실패: {str(e)}"}), 500
