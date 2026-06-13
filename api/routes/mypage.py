@@ -1,7 +1,6 @@
 from flask import Blueprint, request, jsonify
 import json
 import re
-from api.ai import invoke_analyze
 
 mypage_bp = Blueprint('mypage_bp', __name__)
 
@@ -66,6 +65,9 @@ def analyze_pattern():
   "pattern_comment": "한줄 진단 예시: 잠수 타는 사람에게 반복적으로 끌리는 경향이 있습니다."
 }}
 """
+
+        # langchain/모델 로딩은 무겁다 — 실제 호출 시점까지 지연시켜 콜드스타트 비용을 분리.
+        from api.ai import invoke_analyze
 
         # 분석 폴백 체인 사용 — 단일 2.0-flash(상시 할당량 소진)에 묶이면 429 시
         # 60초 sleep을 반복해 서버리스 타임아웃이 난다. invoke_analyze는 429에서

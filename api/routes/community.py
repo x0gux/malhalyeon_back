@@ -360,9 +360,11 @@ class CommentsView(MethodView):
         """
         try:
             db = get_db()
-            if not db.collection("posts").document(post_id).get().exists:
-                return jsonify({"error": "게시글을 찾을 수 없습니다.", "code": "NOT_FOUND"}), 404
 
+            # 게시글 존재 확인 .get()을 따로 두면 댓글 쿼리 전에 순차 RTT가 1회 더
+            # 붙어 응답이 2배 느려진다. 존재하지 않는 게시글은 빈 목록으로 응답한다
+            # (게시글 자체의 404는 상세 조회 엔드포인트가 책임진다).
+            #
             # post_id 필터 + created_at 정렬을 함께 쓰면 복합 색인이 필요하므로,
             # 필터만 Firestore에서 수행하고 정렬은 애플리케이션에서 처리한다.
             docs = (

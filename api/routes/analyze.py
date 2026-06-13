@@ -3,7 +3,6 @@ import re
 import logging
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, g
-from api.ai import invoke_analyze
 from api.firebase_config import get_db
 from api.middleware.auth import require_auth
 
@@ -339,6 +338,10 @@ compatibility_issues는 대화 패턴만으로 일반적인 관계 충돌 지점
   "final_verdict": {{ "status": "danger_level과 동일한 값 (안전/주의/경고/위험 중 하나)", "comment": "한줄평 (이름 금지)" }}
 }}
 """
+
+        # langchain/모델 객체 로딩은 무겁다 — AI를 실제로 호출하는 시점까지 지연시켜
+        # 콜드스타트(특히 AI를 안 쓰는 다른 API)가 이 비용을 떠안지 않게 한다.
+        from api.ai import invoke_analyze
 
         # 응답이 잘려 JSON 파싱이 실패하면 재호출(모델 폴백 포함)로 재시도
         last_raw = ""

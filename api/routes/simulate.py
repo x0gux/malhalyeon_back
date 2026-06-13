@@ -2,7 +2,21 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from flask import Blueprint, request, jsonify
-from api.ai import invoke_simulation, invoke_simulation_fallback, invoke_auxiliary
+# langchain/모델 객체 로딩은 무겁다 — import 시점에 끌어오면 AI를 안 쓰는 다른 API의
+# 콜드스타트까지 그 비용을 떠안는다. 실제 호출 시점까지 미루는 지연 래퍼로 감싼다.
+def invoke_simulation(*args, **kwargs):
+    from api.ai import invoke_simulation as _f
+    return _f(*args, **kwargs)
+
+
+def invoke_simulation_fallback(*args, **kwargs):
+    from api.ai import invoke_simulation_fallback as _f
+    return _f(*args, **kwargs)
+
+
+def invoke_auxiliary(*args, **kwargs):
+    from api.ai import invoke_auxiliary as _f
+    return _f(*args, **kwargs)
 
 simulate_bp = Blueprint('simulate_bp', __name__)
 
