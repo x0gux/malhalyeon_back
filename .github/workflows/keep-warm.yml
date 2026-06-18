@@ -1,0 +1,22 @@
+name: keep-warm
+
+# Vercel 서버리스 함수가 슬립 상태에서 깨어날 때 콜드스타트(~8초)가 발생한다.
+# 5분마다 가벼운 /api/health 를 핑해서 함수 인스턴스를 따뜻하게 유지한다.
+# (Vercel Hobby 플랜의 Cron은 하루 1회가 최대라 keep-warm 용도로는 부적합)
+
+on:
+  schedule:
+    # 5분 간격. GitHub Actions 스케줄은 부하에 따라 수 분 지연될 수 있다.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            https://malhalyeon-back.vercel.app/api/health)
+          echo "health responded: $code"
+          test "$code" = "200"
